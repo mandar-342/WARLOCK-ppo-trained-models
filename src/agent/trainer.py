@@ -1,6 +1,8 @@
 from __future__ import annotations
+import re
 
 from typing import Any
+from xml.parsers.expat import model
 
 import torch
 from loguru import logger
@@ -35,9 +37,13 @@ class PPOTrainer:
 
         self._cfg = config
         self._ppo_cfg = config["ppo"]
+        resume_directory = self._training_cfg.get(
+            "resume_experiment"
+           )
 
         self._experiment = ExperimentManager(
             experiment_name="ppo_baseline",
+            run_directory=resume_directory,
         )
 
         self._training_cfg = config["training"]
@@ -45,7 +51,7 @@ class PPOTrainer:
         self._total_timesteps = (
             total_timesteps
             if total_timesteps is not None
-            else int(self._training_cfg["total_timesteps"])
+            else int(self._training_cfg["timesteps"])
         )
         
         self._device = self._training_cfg.get("device", "auto")
@@ -90,37 +96,104 @@ class PPOTrainer:
             "activation_fn": torch.nn.ReLU,
              "net_arch": architecture["net_arch"],
         }
+        
+    def _remaining_timesteps(self) -> int:
+        """
+        Returns the number of timesteps remaining when
+        resuming from a checkpoint.
+        """
+
+        checkpoint = self._training_cfg.get(
+            "resume_checkpoint"
+        )
+
+        if not checkpoint:
+            return self._total_timesteps
+
+        match = re.search(
+            r"checkpoint_(\d+)\.zip$",
+            str(checkpoint),
+        )
+
+        if match is None:
+            logger.warning(
+                "Unable to determine checkpoint step. "
+                "Training for full {} timesteps.",
+                self._total_timesteps,
+            )
+            return self._total_timesteps
+
+        completed = int(match.group(1))
+
+        remaining = max(
+            0,
+            self._total_timesteps - completed,
+        )
+
+        logger.info(
+            "Checkpoint step: {:,}",
+            completed,
+        )
+
+        logger.info(
+            "Remaining timesteps: {:,}",
+            remaining,
+        )
+
+        return remaining
 
     def _build_model(self) -> PPO:
         """
         Creates the PPO model.
         """
-
+        resume_checkpoint = self._training_cfg.get(
+            "resume_checkpoint"
+         )
         logger.info("Building PPO model.")
 
-        model = PPO(
-            policy="MlpPolicy",
-            env=self._train_env,
-            learning_rate=float(self._ppo_cfg["learning_rate"]),
-            n_steps=int(self._ppo_cfg["n_steps"]),
-            batch_size=int(self._ppo_cfg["batch_size"]),
-            n_epochs=int(self._ppo_cfg["n_epochs"]),
-            gamma=float(self._ppo_cfg["gamma"]),
-            gae_lambda=float(self._ppo_cfg["gae_lambda"]),
-            clip_range=float(self._ppo_cfg["clip_range"]),
-            ent_coef=float(self._ppo_cfg["ent_coef"]),
-            vf_coef=float(self._ppo_cfg["vf_coef"]),
-            max_grad_norm=float(self._ppo_cfg["max_grad_norm"]),
-            seed=int(self._training_cfg["seed"]),
-            device=self._device,
-            tensorboard_log=str(
-                self._experiment.tensorboard_directory
-            ),
-            policy_kwargs=self._policy_kwargs(),
-            verbose=1,
-        )
+        if resume_checkpoint:
+            logger.info(
+        "Loading checkpoint {}",
+        resume_checkpoint,
+            )
 
-        logger.info("PPO model created successfully.")
+            model = PPO.load(
+        resume_checkpoint,
+        env=self._train_env,
+        device=self._device,
+           )
+
+            logger.success(
+        "Checkpoint loaded successfully."
+           )
+
+            return model
+
+        model = PPO(
+    policy="MlpPolicy",
+    env=self._train_env,
+    learning_rate=float(self._ppo_cfg["learning_rate"]),
+    n_steps=int(self._ppo_cfg["n_steps"]),
+    batch_size=int(self._ppo_cfg["batch_size"]),
+    n_epochs=int(self._ppo_cfg["n_epochs"]),
+    gamma=float(self._ppo_cfg["gamma"]),
+    gae_lambda=float(self._ppo_cfg["gae_lambda"]),
+    clip_range=float(self._ppo_cfg["clip_range"]),
+    ent_coef=float(self._ppo_cfg["ent_coef"]),
+    vf_coef=float(self._ppo_cfg["vf_coef"]),
+    max_grad_norm=float(self._ppo_cfg["max_grad_norm"]),
+    seed=int(self._training_cfg["seed"]),
+    device=self._device,
+    tensorboard_log=str(
+        self._experiment.tensorboard_directory
+    ),
+    policy_kwargs=self._policy_kwargs(),
+    verbose=1,
+)
+
+        logger.success(
+    "New PPO model created."
+)
 
         return model
 
@@ -137,9 +210,14 @@ class PPOTrainer:
         logger.info("Starting PPO training.")
 
         self._model = self._build_model()
+        remaining_timesteps = self._remaining_timesteps()
+        if remaining_timesteps == 0:
+            logger.success(
+        "Target timesteps already reached. Skipping training."
+    )
 
         self._model.learn(
-            total_timesteps=self._total_timesteps,
+            total_timesteps=remaining_timesteps,
             callback=self._callbacks,
             tb_log_name=self._experiment.experiment_name,
             progress_bar=True,

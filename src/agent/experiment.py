@@ -30,18 +30,20 @@ class ExperimentManager:
     def __init__(
         self,
         experiment_name: str,
+        run_directory: str | Path | None = None,
     ) -> None:
         self._experiment_name = experiment_name
         self._started_at = datetime.now(timezone.utc)
         self._timestamp = self._started_at.strftime("%Y%m%d_%H%M%S")
-
-        self._run_directory = (
-            root
-            ( "experiments",
-             experiment_name,
-             self._timestamp
+        if run_directory is None:
+            self._run_directory = root(
+                "experiments",
+                experiment_name,
+                self._timestamp,
             )
-        )
+        else:
+            self._run_directory = Path(run_directory)
+        self._run_directory = self._run_directory.resolve()
 
         self._checkpoints_directory = self._run_directory / "checkpoints"
         self._tensorboard_directory = self._run_directory / "tensorboard"
