@@ -74,58 +74,79 @@ class BenchmarkRunner:
                 info,
             ) = self._environment.step(action)
 
-            self.equity_curve.append(
-                float(info["capital"])
-            )
+            self._record_step(
+        info=info,
+        reward=reward,
+    )
 
-            self.portfolio_history.append(
-                {
-                    "step": int(info["step"]),
-                    "price": float(info["price"]),
-                    "capital": float(info["capital"]),
-                    "cash": float(info["cash"]),
-                    "drawdown": float(info["drawdown"]),
-                    "realized_pnl": float(
-                        info["realized_pnl"]
-                    ),
-                    "unrealized_pnl": float(
-                        info["unrealized_pnl"]
-                    ),
-                    "reward": float(reward),
-                    "weights": list(info["weights"]),
-                    "forced_exit": bool(
-                        info["forced_exit"]
-                    ),
-                    "exit_reason": info["exit_reason"],
-                }
-            )
+            
 
-            if int(info["n_trades_this_step"]) > 0:
-
-                realized = float(
-                    info["realized_pnl"]
-                )
-
-                self.trade_returns.append(
-                    realized
-                )
-
-                self.trade_history.append(
-                    {
-                        "step": int(info["step"]),
-                        "price": float(info["price"]),
-                        "realized_pnl": realized,
-                        "forced_exit": bool(
-                            info["forced_exit"]
-                        ),
-                        "exit_reason": info[
-                            "exit_reason"
-                        ],
-                    }
-                )
+            
 
         logger.success(
             "Benchmark episode completed."
+        )
+        
+    def _record_step(
+    self,
+    info: dict,
+    reward: float,
+      ) -> None:
+        
+        
+       """
+    Record one environment step into the benchmark history.
+       """
+
+       self.equity_curve.append(
+        float(info["capital"])
+    )
+
+       self.portfolio_history.append(
+        {
+            "step": int(info["step"]),
+            "price": float(info["price"]),
+            "capital": float(info["capital"]),
+            "cash": float(info["cash"]),
+            "drawdown": float(info["drawdown"]),
+            "realized_pnl": float(
+                info["realized_pnl"]
+            ),
+            "unrealized_pnl": float(
+                info["unrealized_pnl"]
+            ),
+            "reward": float(reward),
+            "weights": list(info["weights"]),
+            "forced_exit": bool(
+                info["forced_exit"]
+            ),
+            "exit_reason": info["exit_reason"],
+           }
+       )
+
+       if int(info["n_trades_this_step"]) > 0:
+            
+
+            realized = float(
+            info["realized_pnl"]
+        )
+
+            self.trade_returns.append(
+            realized
+        )
+
+            self.trade_history.append(
+            {
+                "step": int(info["step"]),
+                "price": float(info["price"]),
+                "realized_pnl": realized,
+                "forced_exit": bool(
+                    info["forced_exit"]
+                ),
+                "exit_reason": info[
+                    "exit_reason"
+                ],
+            }
         )
     
     @property

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from src.benchmark.runner import BenchmarkRunner
+from src.benchmark.buy_hold_runner import BuyHoldRunner
 
 from pathlib import Path
 
@@ -58,16 +58,11 @@ class BuyHoldBenchmark(BenchmarkBase):
             "Running Buy & Hold benchmark."
         )
 
-        runner = BenchmarkRunner(
+        runner = BuyHoldRunner(
             self._environment,
         )
 
-        runner.run(
-            lambda _: np.array(
-                [1.0],
-                dtype=np.float32,
-            )
-        )
+        runner.run()
 
         results = runner.results
 

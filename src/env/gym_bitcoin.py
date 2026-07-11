@@ -159,6 +159,105 @@ class GymBitcoinEnv(gym.Env):
             "capital": self.portfolio.total_value([price]),
         }
         return obs, info
+    
+    def _rebalance_portfolio(
+    self,
+    target_weights: list[float],
+    prices: list[float],
+       ) -> list:
+        trades = self.portfolio.step(
+        target_weights=target_weights,
+        prices=prices,
+        step=self.current_step,
+        timestamp=self.timestamps[self.current_step],)
+
+        self.current_weights = self.portfolio.current_weights(
+        prices
+    )
+
+        return trades
+    
+    def hold_step(self):
+        
+        """
+    Advance one timestep without rebalancing the portfolio.
+    Used by passive benchmarks such as Buy & Hold.
+        """
+
+        price_prev = float(self.prices[self.current_step])
+
+        value_before = self.portfolio.total_value([price_prev])
+
+        self.current_step += 1
+
+        price = float(self.prices[self.current_step])
+        prices = [price]
+
+        trades = []
+
+        total_value = self.portfolio.total_value(prices)
+
+        step_return = (
+        (total_value - value_before) / value_before
+        if value_before > 0
+        else 0.0
+         )
+
+        self.holding_time += 1
+
+        self.peak_value = max(
+        self.peak_value,
+        total_value,
+        )
+
+        drawdown = (
+            (self.peak_value - total_value)
+        / self.peak_value
+        if self.peak_value > 0
+        else 0.0
+          )
+
+        reward = self.reward_calc.calculate(
+        step_return=step_return,
+        drawdown=drawdown,
+        position_change=0.0,
+        )
+
+        terminated = (
+        self.current_step >= self.max_steps
+        or drawdown >= self.max_drawdown
+        or total_value <= 0
+         )
+
+        truncated = False
+
+        obs = self.get_obs()
+
+        info = {
+        "step": self.current_step,
+        "price": price,
+        "weights": list(self.current_weights),
+        "cash": self.portfolio.cash,
+        "cost": 0.0,
+        "capital": total_value,
+        "drawdown": drawdown,
+        "n_trades_this_step": 0,
+        "realized_pnl": self.portfolio.realized_pnl(),
+        "unrealized_pnl": self.portfolio.unrealized_pnl(prices),
+        "reward_components": dict(
+            self.reward_calc.last_components
+        ),
+        "forced_exit": False,
+        "exit_reason": None,
+        }
+
+        return (
+        obs,
+        float(reward),
+        terminated,
+        truncated,
+        info,
+    )
 
     def step(self, action: np.ndarray):
         price_prev = float(self.prices[self.current_step])
@@ -210,13 +309,10 @@ class GymBitcoinEnv(gym.Env):
 
         # 3. Execute the rebalance at the new candle's close.
         weight_delta_before = sum(abs(a - b) for a, b in zip(new_weights, self.current_weights))
-        trades = self.portfolio.step(
-            target_weights=new_weights,
-            prices=prices,
-            step=self.current_step,
-            timestamp=self.timestamps[self.current_step],
-        )
-        self.current_weights = self.portfolio.current_weights(prices)
+        trades = self._rebalance_portfolio(
+         new_weights,
+         prices,
+                         )
 
         #Detects a new position opening
         if(not self.position_open and any(weight>1e-6 for weight in self.current_weights)):
