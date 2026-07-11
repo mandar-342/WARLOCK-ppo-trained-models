@@ -37,10 +37,11 @@ class PPOTrainer:
 
         self._cfg = config
         self._ppo_cfg = config["ppo"]
+        self._training_cfg = config["training"]
         resume_directory = self._training_cfg.get(
             "resume_experiment"
            )
-
+        
         self._experiment = ExperimentManager(
             experiment_name="ppo_baseline",
             run_directory=resume_directory,
@@ -215,6 +216,7 @@ class PPOTrainer:
             logger.success(
         "Target timesteps already reached. Skipping training."
     )
+            return self._model
 
         self._model.learn(
             total_timesteps=remaining_timesteps,
