@@ -10,3 +10,8 @@ seaborn==0.13.2
 gymnasium>=0.29.0
 stable-baselines3>=2.0.0
 torch>=2.0.0
+reportlab>=5.0.0
+tensorboard
+tqdm
+rich
+reportlab

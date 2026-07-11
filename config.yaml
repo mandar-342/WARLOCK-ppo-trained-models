@@ -89,7 +89,7 @@ portfolio:
     model: "fixed_bps"        # fixed_bps | none (extend with more models later)
     fixed_bps: 5.0             # 5 bps = 0.05% adverse price move per trade      
   rebalance:
-    min_rebalance_delta: 0.001  # ignore weight changes smaller than this (avoid dust trades)
+    min_rebalance_delta: 0.01  # ignore weight changes smaller than this (avoid dust trades)
   risk:
     max_drawdown: 0.3
 
@@ -125,7 +125,7 @@ training:
   save_best_model: true
 
   resume_checkpoint:
-  
+
   resume_experiment:
 
 ppo:
