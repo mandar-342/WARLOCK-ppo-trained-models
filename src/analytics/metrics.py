@@ -227,14 +227,20 @@ class MetricsCalculator:
         return float(abs(losers.sum()))
 
     def _profit_factor(self) -> float:
+        
+        gross_profit = self._gross_profit()
         gross_loss = self._gross_loss()
 
         if gross_loss <= 1e-12:
-            return float("inf")
+            if gross_profit <= 1e-12:
+                
+               return 0.0
+
+            return 0.0
 
         return float(
-            self._gross_profit() / gross_loss
-        )
+        gross_profit / gross_loss
+       )
 
     def _expectancy(self) -> float:
         if self._trade_returns.empty:

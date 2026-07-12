@@ -16,6 +16,6 @@
     "win_rate": 0.0,
     "average_win": 0.0,
     "average_loss": 0.0,
-    "profit_factor": Infinity,
+    "profit_factor": 0.0,
     "expectancy": 0.0
 }
