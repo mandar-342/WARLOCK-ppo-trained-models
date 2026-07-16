@@ -63,7 +63,7 @@ class GymBitcoinEnv(gym.Env):
         # 1 - sum(action). The agent's raw output is clipped (not rescaled)
         # so it can legitimately request "all cash" by outputting zeros.
         self.action_space = spaces.Box(
-            low=0.0, high=1.0, shape=(self.n_assets,), dtype=np.float32
+            low=-1.0, high=1.0, shape=(self.n_assets,), dtype=np.float32
         )
 
         # Episode state (initialized in reset)
@@ -91,8 +91,16 @@ class GymBitcoinEnv(gym.Env):
         df = pd.read_parquet(self.data_path)
 
         #Identify feature columns (exclude OHLCV + timestamp)
-        exclude_cols = {"timestamp", "open", "high", "low", "close", "volume"}
-        self.feature_cols = [c for c in df.columns if c not in exclude_cols]
+        selected = config["features"]["selected_features"]
+
+        self.feature_cols = [
+    c for c in selected
+    if c in df.columns
+            ]
+        logger.info(
+    "Observation Features: {}",
+    self.feature_cols,
+            )
 
         self.features = df[self.feature_cols].values.astype(np.float32)
         self.prices = df["close"].values.astype(np.float32)
@@ -263,11 +271,15 @@ class GymBitcoinEnv(gym.Env):
         price_prev = float(self.prices[self.current_step])
 
         # 1. Clip raw action to the valid simplex-ish range, then rate-limit the change in allocation.
-        target_weights = [float(np.clip(a, 0.0, 1.0)) for a in action]
-        new_weights = [
-            self.position_sizer.apply(current, target)
-            for current, target in zip(self.current_weights, target_weights)
+        delta_actions = np.clip(action, -1.0, 1.0)
+        target_weights = [
+       float(np.clip(current + delta * 0.50, 0.0, 1.0))
+        for current, delta in zip(self.current_weights, delta_actions)
         ]
+        new_weights = [
+    self.position_sizer.apply(current, target)
+    for current, target in zip(self.current_weights, target_weights)
+       ]
         # Dynamic ATR Position Sizing
         current_atr = float(self.features[self.current_step, self.atr_feature_idx])
         risk_multiplier = min(1.0, self.target_atr_pct / max(current_atr, 1e-6) )
@@ -367,6 +379,10 @@ class GymBitcoinEnv(gym.Env):
             "realized_pnl": self.portfolio.realized_pnl(),
             "unrealized_pnl": self.portfolio.unrealized_pnl(prices),
             "reward_components": dict(self.reward_calc.last_components),
+            "raw_action": action.tolist(),
+            "target_weights": target_weights,
+            "position_sized_weights": list(new_weights),
+            "risk_multiplier": float(risk_multiplier),
             "forced_exit": forced_exit,
             "exit_reason": exit_reason,
         }

@@ -16,5 +16,9 @@ def volume_features(df: pd.DataFrame) -> pd.DataFrame:
         np.where(out["close"] < out["close"].shift(), -1, 0)
     )
     out["OBV"] = (direction * out["volume"]).cumsum()
+    out["OBV_zscore"] = rolling_zscore(
+    out["OBV"],
+    window=_CFG["zscore_window"],
+       )
 
     return out

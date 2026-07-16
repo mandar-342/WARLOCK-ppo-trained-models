@@ -82,6 +82,8 @@ class Evaluator:
         self._trade_returns: list[float] = []
         self._portfolio_history: list[dict] = []
         self._trade_history: list[dict] = []
+        self._reward_history: list[dict] = []
+        self._action_history: list[dict] = []
 
         logger.info(
             "Evaluation initialized."
@@ -109,6 +111,28 @@ class Evaluator:
 
             observation, reward, terminated, truncated, info = (
                 self._environment.step(action)
+            )
+            self._action_history.append(
+       {
+        "step": int(info["step"]),
+        "raw_action": float(info["raw_action"][0]),
+        "target_weight": float(info["target_weights"][0]),
+        "position_weight": float(info["position_sized_weights"][0]),
+        "risk_multiplier": float(info["risk_multiplier"]),
+        "forced_exit": bool(info["forced_exit"]),
+        "exit_reason": info["exit_reason"],
+        }
+            )
+            reward_components = info["reward_components"]
+            
+            self._reward_history.append(
+                {
+                    "step_return": float(reward_components["step_return"]),
+                    "reward_return": float(reward_components["reward_return"]),
+                    "drawdown_penalty": float(reward_components["drawdown_penalty"]),
+                    "overtrade_penalty": float(reward_components["overtrade_penalty"]),
+                    "total_reward": float(reward_components["total_reward"]),
+                }
             )
 
             self._equity_curve.append(
@@ -185,10 +209,23 @@ class Evaluator:
                 self._evaluation_dir / "trades.csv",
                 index=False,
             )
+        pd.DataFrame(
+    self._reward_history,
+            ).to_csv(
+    self._evaluation_dir / "reward_components.csv",
+    index=False,
+           )
+        pd.DataFrame(
+    self._action_history,
+).to_csv(
+    self._evaluation_dir / "action_diagnostics.csv",
+    index=False,
+)
 
         logger.success(
             "Evaluation CSV files saved."
         )
+        
         
     def _generate_analytics(self) -> None:
         """
@@ -225,6 +262,22 @@ class Evaluator:
                 evaluation_directory=self._evaluation_dir,
                 plots_directory=self._plots_dir,
             ).generate()
+            
+        reward_df = pd.DataFrame(self._reward_history)
+        logger.info("-" * 80)
+        logger.info("Reward Diagnostics")
+        for column in reward_df.columns:
+            logger.info(
+        "{} | mean={:.6f} std={:.6f} min={:.6f} max={:.6f}",
+        column,
+        reward_df[column].mean(),
+        reward_df[column].std(),
+        reward_df[column].min(),
+        reward_df[column].max(),
+    )
+        logger.info("-" * 80)
+
+
 
         logger.success(
             "Analytics generated successfully."

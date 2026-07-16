@@ -1,7 +1,0 @@
-{
-    "experiment_name": "ppo_baseline",
-    "git_commit": "unknown",
-    "platform": "Windows-11-10.0.26200-SP0",
-    "python_version": "3.13.9 | packaged by Anaconda, Inc. | (main, Oct 21 2025, 19:09:58) [MSC v.1929 64 bit (AMD64)]",
-    "timestamp": "2026-07-07T16:15:52.244930+00:00"
-}

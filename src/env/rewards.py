@@ -53,27 +53,34 @@ class RewardCalculator:
         return self.overtrade_scale * abs(position_change)
 
     def calculate(
-        self,
-        step_return: float,
-        drawdown: float,
-        position_change: float,
-    ) -> float:
-        sharpe  = self._sharpe_reward(step_return)
-        dd_pen  = self._drawdown_penalty(drawdown)
-        ot_pen  = self._overtrade_penalty(position_change)
-        step_return_weight = 0.25
-        sharpe_weight = 0.75
-        total =((step_return_weight * step_return) + (sharpe_weight * sharpe) - dd_pen - ot_pen)
-        self.last_components = {
-            "sharpe_reward": sharpe,
-            "drawdown_penalty": dd_pen,
-            "overtrade_penalty": ot_pen,
-            "total_reward": total,
-        }
-        if np.isnan(total):
-            raise ValueError("Reward became NaN."
+    self,
+    step_return: float,
+    drawdown: float,
+    position_change: float,
+) -> float:
+        
+
+        dd_pen = self._drawdown_penalty(drawdown)
+        ot_pen = self._overtrade_penalty(position_change)
+
+    # Stabilize returns
+        reward = np.tanh(step_return * 100.0)
+
+        total = (
+        reward
+        - dd_pen
+        - ot_pen
     )
-        return total
+
+        self.last_components = {
+        "step_return": step_return,
+        "reward_return": reward,
+        "drawdown_penalty": dd_pen,
+        "overtrade_penalty": ot_pen,
+        "total_reward": total,
+    }
+
+        return float(total)
 
     @property
     def buffer_mean(self) -> float:
