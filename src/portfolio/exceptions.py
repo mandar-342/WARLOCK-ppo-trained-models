@@ -26,3 +26,10 @@ class InvalidActionError(PortfolioError):
 
 class InvalidConfigError(PortfolioError):
     """Raised when the `portfolio` section of config.yaml is missing or malformed."""
+
+class InsufficientMarginError(PortfolioError):
+    """Raised when a futures order would require more margin than is available."""
+
+class LiquidationError(PortfolioError):
+    """Raised (or logged) when a futures position is force-closed because
+    equity fell below the maintenance margin requirement."""

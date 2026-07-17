@@ -21,14 +21,15 @@ logger.add(
 
 def test_zero_drawdown_zero_overtrade():
     rc = RewardCalculator()
-    # Fill buffer to avoid the single-sample zero-reward trap
-    rc.calculate(step_return=0.01, drawdown=0.0, position_change=0.0)
     reward = rc.calculate(step_return=0.01, drawdown=0.0, position_change=0.0)
     comps = rc.last_components
-    
-    # FIX: Update assertion to reflect the 0.25 / 0.75 weight blending
-    expected_total = (0.25 * 0.01) + (0.75 * comps["sharpe_reward"])
+
+    # Current implementation: total = tanh(step_return * 100) - dd_pen - ot_pen.
+    # With zero drawdown/overtrade, reward is exactly the tanh-compressed return.
+    expected_total = np.tanh(0.01 * 100.0)
     assert abs(reward - expected_total) < 1e-9
+    assert comps["drawdown_penalty"] == 0.0
+    assert comps["overtrade_penalty"] == 0.0
 
 def test_drawdown_strictly_penalizes_reward():
     rc_a = RewardCalculator()
@@ -61,7 +62,10 @@ def test_negative_returns_yield_negative_sharpe():
 def test_reset_clears_buffer_and_components():
     rc = RewardCalculator()
     rc.calculate(step_return=0.02, drawdown=0.1, position_change=0.5)
-    assert len(rc.returns_buffer) == 1
+    # Current implementation computes reward as tanh(step_return * 100) and
+    # no longer feeds returns_buffer (that was specific to the old
+    # rolling-Sharpe reward); reset() should still leave both empty/default.
+    assert len(rc.returns_buffer) == 0
     rc.reset()
     assert len(rc.returns_buffer) == 0
     assert rc.last_components["total_reward"] == 0.0
@@ -70,10 +74,11 @@ def test_reset_clears_buffer_and_components():
 def test_single_sample_buffer():
     rc = RewardCalculator()
     reward = rc.calculate(step_return=0.05, drawdown=0.0, position_change=0.0)
-    
-    # FIX: Sharpe component is 0.0, but total reward includes step_return weight
-    assert rc.last_components["sharpe_reward"] == 0.0
-    assert abs(reward - (0.25 * 0.05)) < 1e-9
+
+    # No sharpe/rolling-window warm-up in the current implementation: a
+    # single sample already produces a full reward via tanh(step_return).
+    assert "sharpe_reward" not in rc.last_components
+    assert abs(reward - np.tanh(0.05 * 100.0)) < 1e-9
 
 def test_env_step_exposes_reward_components():
     env = GymBitcoinEnv()
@@ -83,7 +88,7 @@ def test_env_step_exposes_reward_components():
     assert "reward_components" in info
     comps = info["reward_components"]
     assert set(comps.keys()) == {
-        "sharpe_reward", "drawdown_penalty", "overtrade_penalty", "total_reward"
+        "step_return", "reward_return", "drawdown_penalty", "overtrade_penalty", "total_reward"
     }
     assert abs(comps["total_reward"] - reward) < 1e-9
     env.close()

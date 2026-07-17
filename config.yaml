@@ -76,22 +76,26 @@ risk:
   take_profit_atr_multiple: 3.0
   target_atr_pct: 1.0
 
-#portfolio configs
 portfolio:
-  initial_capital: 10000.0
-  assets:                     
+  initial_capital: 10000.0    # single shared pool
+  assets:
     - symbol: "BTC/USDT"
       min_trade_notional: 10.0
-  fees:
-    maker_fee_rate: 0.0005
-    taker_fee_rate: 0.0005
-  slippage:
-    model: "fixed_bps"        # fixed_bps | none (extend with more models later)
-    fixed_bps: 5.0             # 5 bps = 0.05% adverse price move per trade      
   rebalance:
-    min_rebalance_delta: 0.01  # ignore weight changes smaller than this (avoid dust trades)
+    min_rebalance_delta: 0.01
   risk:
     max_drawdown: 0.3
+
+  long:                        # was top-level portfolio.fees / portfolio.slippage
+    fees: {maker_fee_rate: 0.0005, taker_fee_rate: 0.0005}
+    slippage: {model: "fixed_bps", fixed_bps: 5.0}
+
+  short:                       # was portfolio.futures
+    leverage: 3.0
+    maintenance_margin_ratio: 0.05
+    funding_rate_per_step: 0.0
+    fees: {maker_fee_rate: 0.0002, taker_fee_rate: 0.0004}
+    slippage: {model: "fixed_bps", fixed_bps: 5.0}
 
 #reward configs
 reward:

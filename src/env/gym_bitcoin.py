@@ -7,7 +7,7 @@ from gymnasium import spaces
 from loguru import logger
 from src.env.rewards import RewardCalculator
 from src.env.utils import PositionSizer
-from src.portfolio import SpotPortfolio
+from src.portfolio import Portfolio
 from src.utils import config, root
 
 class GymBitcoinEnv(gym.Env):
@@ -44,8 +44,10 @@ class GymBitcoinEnv(gym.Env):
         )
         self.position_sizer = PositionSizer(max_step_change=max_trade_step)
 
-        self.portfolio = SpotPortfolio()
-        self.initial_capital = self.portfolio.cash  # for observation normalization
+        # One pool backs both long (spot-style) and short (futures-style
+        # margin) exposure; see src/portfolio/unified_portfolio.py.
+        self.portfolio = Portfolio()
+        self.initial_capital = self.portfolio.cash
         self.n_assets = len(self.portfolio.symbols)
 
         self.load_data()
@@ -59,9 +61,9 @@ class GymBitcoinEnv(gym.Env):
         self.observation_space = spaces.Box(
             low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32
         )
-        # Target allocation per asset, in [0, 1]. Implied cash weight is
-        # 1 - sum(action). The agent's raw output is clipped (not rescaled)
-        # so it can legitimately request "all cash" by outputting zeros.
+        # Target *delta* per asset, in [-1, 1], applied to the current net
+        # weight each step (see step()). Net weight itself can now range
+        # over [-1, 1]: positive is spot long, negative is futures short.
         self.action_space = spaces.Box(
             low=-1.0, high=1.0, shape=(self.n_assets,), dtype=np.float32
         )
@@ -76,6 +78,7 @@ class GymBitcoinEnv(gym.Env):
         self.position_open = False
         self.entry_price = 0.0
         self.entry_atr = 0.0
+        self.entry_weight = 0.0
         self.stop_loss_multiple=config.get("risk", {}).get("stop_loss_atr_multiple", 1.5)
         self.take_profit_multiple= config.get("risk", {}).get("take_profit_atr_multiple", 3.0)
         self.target_atr_pct=config.get("risk", {}).get("target_atr_pct", 1.0)
@@ -124,15 +127,18 @@ class GymBitcoinEnv(gym.Env):
         market_window = self.features[start:self.current_step].flatten()
 
         prices = [self.prices[self.current_step]]
-        weights = self.portfolio.current_weights(prices)
-        cash_weight = 1.0 - sum(weights)
+        net_weights = self.portfolio.current_weights(prices)
+        # cash_weight approximates the "uninvested" fraction of equity;
+        # long notional is cash-backed 1:1 so this stays meaningful even
+        # though short notional draws margin rather than cash directly.
+        cash_weight = 1.0 - sum(max(0.0, w) for w in net_weights)
         unrealized_pnl_pct = (
             self.portfolio.unrealized_pnl(prices) / self.initial_capital
             if self.initial_capital > 0 else 0.0
         )
 
         portfolio_vec = np.array(
-            [cash_weight, *weights, unrealized_pnl_pct],
+            [cash_weight, *net_weights, unrealized_pnl_pct],
             dtype=np.float32,
         )
         portfolio_vec = np.concatenate(
@@ -157,6 +163,7 @@ class GymBitcoinEnv(gym.Env):
         self.position_open = False
         self.entry_price = 0.0
         self.entry_atr = 0.0
+        self.entry_weight = 0.0
 
         obs = self.get_obs()
         price = float(self.prices[self.current_step])
@@ -173,15 +180,17 @@ class GymBitcoinEnv(gym.Env):
     target_weights: list[float],
     prices: list[float],
        ) -> list:
+        """Execute a rebalance toward net signed `target_weights` in
+        [-1, 1]. The unified portfolio itself splits each weight into its
+        long (>=0) and short (<0) leg and draws both from the same pool.
+        """
         trades = self.portfolio.step(
         target_weights=target_weights,
         prices=prices,
         step=self.current_step,
         timestamp=self.timestamps[self.current_step],)
 
-        self.current_weights = self.portfolio.current_weights(
-        prices
-    )
+        self.current_weights = self.portfolio.current_weights(prices)
 
         return trades
     
@@ -270,10 +279,12 @@ class GymBitcoinEnv(gym.Env):
     def step(self, action: np.ndarray):
         price_prev = float(self.prices[self.current_step])
 
-        # 1. Clip raw action to the valid simplex-ish range, then rate-limit the change in allocation.
+        # 1. Clip raw action to the valid delta range, then rate-limit the
+        # change in net allocation. target can now be negative (futures
+        # short); previously it was clamped to [0, 1] (spot long only).
         delta_actions = np.clip(action, -1.0, 1.0)
         target_weights = [
-       float(np.clip(current + delta * 0.50, 0.0, 1.0))
+       float(np.clip(current + delta * 0.50, -1.0, 1.0))
         for current, delta in zip(self.current_weights, delta_actions)
         ]
         new_weights = [
@@ -301,6 +312,9 @@ class GymBitcoinEnv(gym.Env):
         exit_reason = None
         if self.position_open:
               unrealized_return = (price - self.entry_price) / self.entry_price
+              if self.entry_weight < 0:
+                  # Short leg: profit is the mirror image of a long's return.
+                  unrealized_return = -unrealized_return
               stop_loss_pct=(self.stop_loss_multiple * self.entry_atr/100.0)
               take_profit_pct=(self.take_profit_multiple*self.entry_atr/100.0)
               if unrealized_return <= -stop_loss_pct:
@@ -327,15 +341,17 @@ class GymBitcoinEnv(gym.Env):
                          )
 
         #Detects a new position opening
-        if(not self.position_open and any(weight>1e-6 for weight in self.current_weights)):
+        if(not self.position_open and any(abs(weight)>1e-6 for weight in self.current_weights)):
             self.position_open = True
             self.entry_price = price
             self.entry_atr = float(self.features[self.current_step, self.atr_feature_idx])
+            self.entry_weight = self.current_weights[0]
         # Detect position fully closed
-        if (self.position_open and all(weight < 1e-6 for weight in self.current_weights)):
+        if (self.position_open and all(abs(weight) < 1e-6 for weight in self.current_weights)):
             self.position_open = False
             self.entry_price = 0.0
             self.entry_atr = 0.0
+            self.entry_weight = 0.0
 
         total_value = self.portfolio.total_value(prices)
         cost = sum(t.fee + t.slippage_cost for t in trades)

@@ -23,7 +23,7 @@ def test_env_creation_and_spaces():
     logger.info(f"Action space: {env.action_space}")
     logger.info(f"Max steps: {env.max_steps}, features: {env.n_features}")
     assert env.action_space.shape == (1,)  # BTC-only for now
-    assert env.action_space.low[0] == 0.0
+    assert env.action_space.low[0] == -1.0
     assert env.action_space.high[0] == 1.0
     env.close()
 
@@ -76,10 +76,22 @@ def test_full_episode_random_policy():
 def test_action_clipping():
     env = GymBitcoinEnv()
     env.reset(seed=1)
-    # Out-of-range action should clip to [0, 1], not error.
+    # Out-of-range action should clip to [-1, 1], not error.
     obs, r, t, tr, info = env.step(np.array([5.0], dtype=np.float32))
-    assert 0.0 <= info["weights"][0] <= 1.0
+    assert -1.0 <= info["weights"][0] <= 1.0
     logger.info(f"Out-of-range action clipped correctly: weights={info['weights']}")
+    env.close()
+
+def test_negative_action_opens_futures_short():
+    env = GymBitcoinEnv()
+    env.reset(seed=2)
+    # Two steps of a full-negative delta to push net weight below zero
+    # (single step is rate-limited to -0.5 * max_step_change territory).
+    env.step(np.array([-1.0], dtype=np.float32))
+    obs, r, t, tr, info = env.step(np.array([-1.0], dtype=np.float32))
+    assert info["weights"][0] < 0.0
+    assert env.portfolio.short_position(env.portfolio.symbols[0]).short_quantity > 0.0
+    assert env.portfolio.long_position(env.portfolio.symbols[0]).quantity == 0.0  # long leg untouched
     env.close()
 
 def test_max_trade_step_rate_limit():
@@ -111,6 +123,7 @@ TESTS = [
     test_full_allocation_buys_btc,
     test_full_episode_random_policy,
     test_action_clipping,
+    test_negative_action_opens_futures_short,
     test_max_trade_step_rate_limit,
     test_reset_clears_portfolio_state,
 ]

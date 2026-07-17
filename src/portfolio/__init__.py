@@ -1,6 +1,6 @@
 from src.portfolio.base import PortfolioBase
-from src.portfolio.portfolio import SpotPortfolio
-from src.portfolio.position import Position
+from src.portfolio.unified_portfolio import Portfolio
+from src.portfolio.position import Position, FuturesPosition
 from src.portfolio.trade import Trade, TradeSide
 from src.portfolio.history import TradeHistory, EquityPoint
 from src.portfolio.metrics import PortfolioMetrics, MetricsSummary
@@ -8,6 +8,8 @@ from src.portfolio.exceptions import (
     PortfolioError,
     InsufficientCashError,
     InsufficientPositionError,
+    InsufficientMarginError,
+    LiquidationError,
     UnknownAssetError,
     InvalidActionError,
     InvalidConfigError,
@@ -15,8 +17,9 @@ from src.portfolio.exceptions import (
 
 __all__ = [
     "PortfolioBase",
-    "SpotPortfolio",
+    "Portfolio",
     "Position",
+    "FuturesPosition",
     "Trade",
     "TradeSide",
     "TradeHistory",
@@ -26,6 +29,8 @@ __all__ = [
     "PortfolioError",
     "InsufficientCashError",
     "InsufficientPositionError",
+    "InsufficientMarginError",
+    "LiquidationError",
     "UnknownAssetError",
     "InvalidActionError",
     "InvalidConfigError",
