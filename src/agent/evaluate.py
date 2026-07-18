@@ -84,6 +84,13 @@ class Evaluator:
         self._trade_history: list[dict] = []
         self._reward_history: list[dict] = []
         self._action_history: list[dict] = []
+        # `info["realized_pnl"]` is the portfolio's *cumulative* realized
+        # P&L since episode start (see Portfolio.realized_pnl()), not the
+        # individual trade's own P&L. We track the previous cumulative
+        # value so we can compute the marginal delta attributable to each
+        # trade event below, instead of mistakenly treating the running
+        # total as a per-trade return.
+        self._prev_realized_pnl: float = 0.0
 
         logger.info(
             "Evaluation initialized."
@@ -157,7 +164,12 @@ class Evaluator:
 
             if int(info["n_trades_this_step"]) > 0:
 
-                realized = float(info["realized_pnl"])
+                cumulative_realized = float(info["realized_pnl"])
+                # Marginal P&L realized by trade(s) executed this step. If
+                # multiple trades landed in the same step, this is their
+                # combined effect; there isn't enough granularity in `info`
+                # to split them further without also changing the env.
+                realized = cumulative_realized - self._prev_realized_pnl
 
                 self._trade_returns.append(realized)
 
@@ -166,10 +178,15 @@ class Evaluator:
                         "step": int(info["step"]),
                         "price": float(info["price"]),
                         "realized_pnl": realized,
+                        "cumulative_realized_pnl": cumulative_realized,
                         "forced_exit": bool(info["forced_exit"]),
                         "exit_reason": info["exit_reason"],
                     }
                 )
+
+            # Keep the tracker in sync every step (not just on trade steps)
+            # so the next delta is always measured against the latest total.
+            self._prev_realized_pnl = float(info["realized_pnl"])
 
         logger.success(
             "Evaluation episode completed."
