@@ -291,10 +291,24 @@ class GymBitcoinEnv(gym.Env):
     self.position_sizer.apply(current, target)
     for current, target in zip(self.current_weights, target_weights)
        ]
-        # Dynamic ATR Position Sizing
+        # Dynamic ATR Position Sizing.
+        # A short's equity risk for a given price move is `leverage`x a
+        # long's, so its ATR budget must be divided by leverage before
+        # solving for the multiplier -- otherwise the sizer treats a 3x
+        # leveraged short as if it carried the same equity risk as an
+        # unleveraged long of the same weight magnitude.
         current_atr = float(self.features[self.current_step, self.atr_feature_idx])
-        risk_multiplier = min(1.0, self.target_atr_pct / max(current_atr, 1e-6) )
-        new_weights=[weight*risk_multiplier for weight in new_weights]
+        leverage = self.portfolio.leverage
+        risk_multiplier_long = min(1.0, self.target_atr_pct / max(current_atr, 1e-6))
+        risk_multiplier_short = min(1.0, self.target_atr_pct / max(current_atr * leverage, 1e-6))
+        # Kept for logging/back-compat: the multiplier actually applied to
+        # asset 0 (single-asset env today), captured before new_weights is
+        # overwritten below.
+        risk_multiplier = risk_multiplier_short if new_weights[0] < 0 else risk_multiplier_long
+        new_weights = [
+            weight * (risk_multiplier_short if weight < 0 else risk_multiplier_long)
+            for weight in new_weights
+        ]
 
         # Capture portfolio value at the *old* price, before this step's
         # trade and before advancing the market cursor. This is the
@@ -315,16 +329,26 @@ class GymBitcoinEnv(gym.Env):
               if self.entry_weight < 0:
                   # Short leg: profit is the mirror image of a long's return.
                   unrealized_return = -unrealized_return
+              # Shorts are margin-backed at `portfolio.short.leverage`, so a
+              # given price move produces `leverage`x the equity impact of
+              # the same move on an unleveraged (1x) long. The ATR-based
+              # stop_loss_pct/take_profit_pct thresholds below are equity-risk
+              # budgets (e.g. "don't lose more than ~1.5*ATR% of equity"), so
+              # we must scale the raw price return by effective leverage
+              # before comparing, or shorts blow through the intended budget
+              # by a factor of `leverage`.
+              effective_leverage = self.portfolio.leverage if self.entry_weight < 0 else 1.0
+              equity_impact = unrealized_return * effective_leverage
               stop_loss_pct=(self.stop_loss_multiple * self.entry_atr/100.0)
               take_profit_pct=(self.take_profit_multiple*self.entry_atr/100.0)
-              if unrealized_return <= -stop_loss_pct:
+              if equity_impact <= -stop_loss_pct:
                   logger.info( f"ATR Stop Loss Triggered "
                                f"| Entry={self.entry_price:.2f} "
                                 f"| Current={price:.2f}")
                   new_weights = [0.0] * self.n_assets  # Force exit
                   forced_exit = True
                   exit_reason = "stop_loss"
-              elif unrealized_return >= take_profit_pct:
+              elif equity_impact >= take_profit_pct:
                   
                     logger.info( f"ATR Take Profit Triggered "
                                f"| Entry={self.entry_price:.2f} "
@@ -399,6 +423,8 @@ class GymBitcoinEnv(gym.Env):
             "target_weights": target_weights,
             "position_sized_weights": list(new_weights),
             "risk_multiplier": float(risk_multiplier),
+            "risk_multiplier_long": float(risk_multiplier_long),
+            "risk_multiplier_short": float(risk_multiplier_short),
             "forced_exit": forced_exit,
             "exit_reason": exit_reason,
         }
