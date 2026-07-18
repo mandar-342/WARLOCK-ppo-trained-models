@@ -28,6 +28,7 @@ class PerformanceMetrics:
     peak_capital: float
     minimum_capital: float
     number_of_trades: int
+    number_of_closing_trades: int
     win_rate: float
     average_win: float
     average_loss: float
@@ -180,6 +181,26 @@ class MetricsCalculator:
     def _number_of_trades(self) -> int:
         return int(len(self._trade_returns))
 
+    def _closing_trades(self) -> pd.Series:
+        """
+        Trades that actually realized P&L (i.e. decreased or closed a
+        position), as opposed to trades that only opened or increased
+        one, which always realize exactly 0.
+
+        Win rate and expectancy are only meaningful over trades that
+        could have won or lost -- an opening trade is neither. Including
+        them in the denominator (as `len(self._trade_returns)`) dilutes
+        win_rate, and since `_expectancy` derives loss_rate as
+        `1 - win_rate`, every opening trade also gets miscounted as a
+        loss there even though `average_loss` itself is computed
+        correctly from true losers only. A small epsilon guards against
+        floating-point noise around exact zero.
+        """
+        return self._trade_returns[self._trade_returns.abs() > 1e-9]
+
+    def _number_of_closing_trades(self) -> int:
+        return int(len(self._closing_trades()))
+
     def _winning_trades(self) -> pd.Series:
         return self._trade_returns[self._trade_returns > 0.0]
 
@@ -187,11 +208,13 @@ class MetricsCalculator:
         return self._trade_returns[self._trade_returns < 0.0]
 
     def _win_rate(self) -> float:
-        if self._trade_returns.empty:
+        closing_trades = self._closing_trades()
+
+        if closing_trades.empty:
             return 0.0
 
         return float(
-            len(self._winning_trades()) / len(self._trade_returns)
+            len(self._winning_trades()) / len(closing_trades)
         )
 
     def _average_win(self) -> float:
@@ -271,6 +294,7 @@ class MetricsCalculator:
             peak_capital=float(self._equity.max()),
             minimum_capital=float(self._equity.min()),
             number_of_trades=self._number_of_trades(),
+            number_of_closing_trades=self._number_of_closing_trades(),
             win_rate=self._win_rate(),
             average_win=self._average_win(),
             average_loss=self._average_loss(),
