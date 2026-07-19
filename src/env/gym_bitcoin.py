@@ -39,6 +39,8 @@ class GymBitcoinEnv(gym.Env):
         self.data_path = data_path
         self.window_len = window_len if window_len is not None else env_cfg.get("window_len", 48)
         self.max_drawdown = max_drawdown if max_drawdown is not None else env_cfg.get("max_drawdown", 0.3)
+        self.deterministic_start = deterministic_start
+
 
         max_trade_step = (
             max_trade_step if max_trade_step is not None else env_cfg.get("max_trade_step", 0.2)
