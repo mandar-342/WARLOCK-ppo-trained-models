@@ -250,16 +250,20 @@ class MetricsCalculator:
         return float(abs(losers.sum()))
 
     def _profit_factor(self) -> float:
-        
+
         gross_profit = self._gross_profit()
         gross_loss = self._gross_loss()
 
         if gross_loss <= 1e-12:
             if gross_profit <= 1e-12:
-                
-               return 0.0
+                # No winning or losing trades at all: undefined.
+                return 0.0
 
-            return 0.0
+            # Wins with zero losses is the best case, not the worst --
+            # returning 0.0 here (as before) made a flawless run look
+            # identical to a total washout. float('inf') is the standard
+            # convention for profit factor with no losses.
+            return float("inf")
 
         return float(
         gross_profit / gross_loss
