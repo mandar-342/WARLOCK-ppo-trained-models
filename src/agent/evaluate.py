@@ -11,7 +11,7 @@ from src.analytics.metrics import MetricsCalculator
 from src.analytics.plots import PlotGenerator
 from src.analytics.report import ReportGenerator
 from src.env.gym_bitcoin import GymBitcoinEnv
-from src.utils import config,root
+from src.utils import config, root, set_global_seed, seed_env
 
 
 class Evaluator:
@@ -40,6 +40,13 @@ class Evaluator:
 
         self._evaluation_cfg = config["evaluation"]
         self._training_cfg = config["training"]
+
+        # Seeds numpy/random/torch so `model.predict(deterministic=False)`
+        # (if ever used) and any other stochastic ops are reproducible,
+        # in addition to the env-level seed passed in `_run_episode`.
+        self._seed = set_global_seed(
+            int(self._evaluation_cfg.get("seed", 42))
+        )
 
         logger.info(
             "Loading PPO model from {}",

@@ -1,208 +1,197 @@
 from __future__ import annotations
 
-import json
-from pathlib import Path
+from collections.abc import Callable
 
-import pandas as pd
+import numpy as np
 from loguru import logger
 
-from src.benchmark.always_cash import AlwaysCashBenchmark
-from src.benchmark.buy_hold import BuyHoldBenchmark
-from src.benchmark.random_agent import RandomAgentBenchmark
-from src.utils import root
+from src.env.gym_bitcoin import GymBitcoinEnv
+from src.utils import config
 
 
-class BenchmarkSuite:
+class BenchmarkRunner:
     """
-    Executes every benchmark strategy and
-    aggregates the results into a comparison.
+    Executes a single evaluation episode using an arbitrary
+    action-selection function.
+
+    The runner is environment-agnostic and strategy-agnostic.
     """
 
     def __init__(
         self,
-        output_directory: str | Path,
+        environment: GymBitcoinEnv,
     ) -> None:
 
-        self._output_dir = Path(output_directory)
+        self._environment = environment
 
-        self._output_dir.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
+        self.equity_curve: list[float] = []
+        self.trade_returns: list[float] = []
+        self.portfolio_history: list[dict] = []
+        self.trade_history: list[dict] = []
 
-        self._comparison: list[dict] = []
+    def reset(self) -> None:
 
-    @staticmethod
-    def _load_metrics(
-        metrics_path: Path,
-    ) -> dict:
+        self.equity_curve.clear()
 
-        with metrics_path.open(
-            "r",
-            encoding="utf-8",
-        ) as file:
+        self.trade_returns.clear()
 
-            return json.load(file)
-        
-    def _run_benchmarks(self) -> None:
-        """
-        Execute every benchmark strategy and collect metrics.
-        """
+        self.portfolio_history.clear()
 
-        benchmarks = [
-            BuyHoldBenchmark(
-                output_directory=root(
-                    "benchmarks",
-                    "buy_hold",
-                ),
-            ),
-            AlwaysCashBenchmark(
-                output_directory=root(
-                    "benchmarks",
-                    "always_cash",
-                ),
-            ),
-            RandomAgentBenchmark(
-                output_directory=root(
-                    "benchmarks",
-                    "random_agent",
-                ),
-            ),
-        ]
+        self.trade_history.clear()
 
-        for benchmark in benchmarks:
-
-            logger.info(
-                "Running {}...",
-                benchmark.name,
-            )
-
-            benchmark.evaluate()
-
-            metrics = self._load_metrics(
-                benchmark.output_directory
-                / "metrics.json"
-            )
-
-            metrics = {
-                "strategy": benchmark.name,
-                **metrics,
-            }
-
-            self._comparison.append(metrics)
-
-        logger.success(
-            "Benchmark suite completed successfully."
-        )
-
-    def _comparison_dataframe(
+    def run(
         self,
-    ) -> pd.DataFrame:
+        action_fn: Callable[[np.ndarray], np.ndarray],
+    ) -> None:
         """
-        Build the benchmark comparison table.
+        Execute one complete episode.
+
+        Parameters
+        ----------
+        action_fn
+            Function mapping observation -> action.
         """
 
-        dataframe = pd.DataFrame(
-            self._comparison,
+        logger.info(
+            "Starting benchmark episode."
         )
 
-        if "strategy" in dataframe.columns:
+        self.reset()
 
-            columns = (
-                ["strategy"]
-                + [
-                    column
-                    for column in dataframe.columns
-                    if column != "strategy"
-                ]
-            )
+        # Previously an unseeded `reset()`: for envs without
+        # `deterministic_start=True` this left the episode start step
+        # (and, for callers like the random-agent benchmark,
+        # `action_space.sample()`) tied to OS entropy, so results
+        # differed on every run even with an otherwise identical setup.
+        seed = int(config.get("evaluation", {}).get("seed", 42))
+        self._environment.action_space.seed(seed)
+        observation, _ = self._environment.reset(seed=seed)
 
-            dataframe = dataframe[
-                columns
-            ]
+        terminated = False
 
-        return dataframe
+        truncated = False
+        while not (terminated or truncated):
 
-    def _save_results(self) -> None:
-        """
-        Save benchmark comparison results.
-        """
+            action = action_fn(observation)
 
-        comparison_df = (
-            self._comparison_dataframe()
-        )
+            (
+                observation,
+                reward,
+                terminated,
+                truncated,
+                info,
+            ) = self._environment.step(action)
 
-        comparison_df.to_csv(
-            self._output_dir
-            / "comparison.csv",
-            index=False,
-        )
-
-        comparison_df.to_json(
-            self._output_dir
-            / "comparison.json",
-            orient="records",
-            indent=4,
-        )
-
-        logger.success(
-            "Comparison files saved."
-        )
-        
-    def _save_markdown(self) -> None:
-        """
-        Save a Markdown leaderboard.
-        """
-
-        dataframe = self._comparison_dataframe()
-
-        markdown = "# WARLOCK Benchmark Results\n\n"
-
-        markdown += dataframe.to_markdown(
-            index=False,
-        )
-
-        with (
-            self._output_dir / "comparison.md"
-        ).open(
-            "w",
-            encoding="utf-8",
-        ) as file:
-
-            file.write(markdown)
-
-    def run(self) -> None:
-        """
-        Execute the benchmark suite.
-        """
-
-        logger.info("=" * 80)
-        logger.info("WARLOCK Benchmark Suite")
-        logger.info("=" * 80)
-
-        self._run_benchmarks()
-
-        self._save_results()
-
-        self._save_markdown()
-
-        logger.success(
-            "Benchmark suite completed successfully."
-        )
-        
-        
-def main() -> int:
-
-    suite = BenchmarkSuite(
-        output_directory=root(
-            "benchmarks",
-        ),
+            self._record_step(
+        info=info,
+        reward=reward,
     )
 
-    suite.run()
+            
 
-    return 0
+            
 
+        logger.success(
+            "Benchmark episode completed."
+        )
+        
+    def _record_step(
+    self,
+    info: dict,
+    reward: float,
+      ) -> None:
+        
+        
+       """
+    Record one environment step into the benchmark history.
+       """
 
-if __name__ == "__main__":
-    raise SystemExit(main())
+       self.equity_curve.append(
+        float(info["capital"])
+    )
+
+       self.portfolio_history.append(
+        {
+            "step": int(info["step"]),
+            "price": float(info["price"]),
+            "capital": float(info["capital"]),
+            "cash": float(info["cash"]),
+            "drawdown": float(info["drawdown"]),
+            "realized_pnl": float(
+                info["realized_pnl"]
+            ),
+            "unrealized_pnl": float(
+                info["unrealized_pnl"]
+            ),
+            "reward": float(reward),
+            "weights": list(info["weights"]),
+            "forced_exit": bool(
+                info["forced_exit"]
+            ),
+            "exit_reason": info["exit_reason"],
+           }
+       )
+
+       if int(info["n_trades_this_step"]) > 0:
+            
+
+            realized = float(
+            info["realized_pnl"]
+        )
+
+            self.trade_returns.append(
+            realized
+        )
+
+            self.trade_history.append(
+            {
+                "step": int(info["step"]),
+                "price": float(info["price"]),
+                "realized_pnl": realized,
+                "forced_exit": bool(
+                    info["forced_exit"]
+                ),
+                "exit_reason": info[
+                    "exit_reason"
+                ],
+            }
+        )
+    
+    @property
+    def results(self) -> dict:
+        """
+        Return all benchmark outputs collected during the episode.
+        """
+
+        return {
+            "equity_curve": self.equity_curve,
+            "trade_returns": self.trade_returns,
+            "portfolio_history": self.portfolio_history,
+            "trade_history": self.trade_history,
+        }
+
+    @property
+    def final_capital(self) -> float:
+        """
+        Final portfolio value.
+        """
+
+        if not self.equity_curve:
+            return 0.0
+
+        return float(self.equity_curve[-1])
+
+    @property
+    def total_trades(self) -> int:
+        """
+        Number of completed trades.
+        """
+
+        return len(self.trade_history)
+
+    def __str__(self) -> str:
+        return (
+            f"BenchmarkRunner("
+            f"capital={self.final_capital:.2f}, "
+            f"trades={self.total_trades})"
+        )
