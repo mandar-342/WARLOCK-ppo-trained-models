@@ -59,6 +59,7 @@ class Evaluator:
 
         self._environment = GymBitcoinEnv(
     data_path=str(test_data),
+    deterministic_start=True,
 )
         self._evaluation_dir = (
             self._experiment_dir / "evaluation"
@@ -79,6 +80,7 @@ class Evaluator:
         )
 
         self._equity_curve: list[float] = []
+        self._equity_steps: list[int] = []
         self._trade_returns: list[float] = []
         self._portfolio_history: list[dict] = []
         self._trade_history: list[dict] = []
@@ -104,7 +106,26 @@ class Evaluator:
 
         logger.info("Starting evaluation episode.")
 
-        observation, _ = self._environment.reset()
+        # Defensive reset: guards against stale state if `evaluate()` is
+        # ever called more than once on the same Evaluator instance (the
+        # lists otherwise accumulate across calls instead of representing
+        # a single clean episode).
+        self._equity_curve = []
+        self._equity_steps = []
+        self._trade_returns = []
+        self._portfolio_history = []
+        self._trade_history = []
+        self._reward_history = []
+        self._action_history = []
+        self._prev_realized_pnl = 0.0
+
+        # `deterministic_start=True` already removes the only source of
+        # randomness in this env (see gym_bitcoin.py), but we pass an
+        # explicit seed too as defense-in-depth in case a stochastic
+        # element (e.g. slippage noise) is ever added later.
+        observation, _ = self._environment.reset(
+            seed=self._evaluation_cfg.get("seed", 42)
+        )
 
         terminated = False
         truncated = False
@@ -144,6 +165,9 @@ class Evaluator:
 
             self._equity_curve.append(
                 float(info["capital"])
+            )
+            self._equity_steps.append(
+                int(info["step"])
             )
 
             self._portfolio_history.append(
@@ -201,7 +225,7 @@ class Evaluator:
 
             pd.DataFrame(
                 {
-                    "step": range(len(self._equity_curve)),
+                    "step": self._equity_steps,
                     "capital": self._equity_curve,
                 }
             ).to_csv(
