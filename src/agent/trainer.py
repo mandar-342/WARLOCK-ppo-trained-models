@@ -13,7 +13,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv
 from src.agent.callbacks import CallbackFactory
 from src.agent.experiment import ExperimentManager
 from src.env.gym_bitcoin import GymBitcoinEnv
-from src.utils import config
+from src.utils import config, set_global_seed, seed_env
 
 
 class PPOTrainer:
@@ -57,6 +57,10 @@ class PPOTrainer:
         
         self._device = self._training_cfg.get("device", "auto")
 
+        self._seed = set_global_seed(
+            int(self._training_cfg["seed"])
+        )
+
         logger.info(
             "Initializing PPO trainer "
             "(device={}, timesteps={:,})",
@@ -84,6 +88,12 @@ class PPOTrainer:
 
         def make_env() -> Monitor:
             env = GymBitcoinEnv()
+            # `PPO(seed=...)` seeds SB3's own RNGs, but not this env's
+            # `np_random` (used for the randomized episode start step) --
+            # that only happens on the *first* `reset()`, which SB3 may
+            # trigger before/without our seed. Seed it explicitly here so
+            # training is reproducible run-to-run.
+            seed_env(env, self._seed)
             return Monitor(env)
 
         return DummyVecEnv([make_env])
