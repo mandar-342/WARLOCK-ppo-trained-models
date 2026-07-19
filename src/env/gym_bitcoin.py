@@ -39,13 +39,6 @@ class GymBitcoinEnv(gym.Env):
         self.data_path = data_path
         self.window_len = window_len if window_len is not None else env_cfg.get("window_len", 48)
         self.max_drawdown = max_drawdown if max_drawdown is not None else env_cfg.get("max_drawdown", 0.3)
-        # Training wants a random episode start each reset (for
-        # generalization across market regimes). Evaluation wants every
-        # run to score the *same*, full held-out window so results are
-        # reproducible and comparable across runs -- otherwise
-        # total_return/Sharpe/trade counts differ purely because two runs
-        # scored different, unequal-length slices of the test set.
-        self.deterministic_start = deterministic_start
 
         max_trade_step = (
             max_trade_step if max_trade_step is not None else env_cfg.get("max_trade_step", 0.2)
@@ -151,13 +144,12 @@ class GymBitcoinEnv(gym.Env):
 
     def reset(self, *, seed: int | None = None, options: dict | None = None):
         super().reset(seed=seed)
-
         if self.deterministic_start:
             # Evaluation: always score the full held-out window,
             # starting right after the first observable window.
             self.current_step = self.window_len
         else:
-            # Training: random start for generalization.
+            # random start for generalization
             self.current_step = self.np_random.integers(
                 self.window_len,
                 max(self.window_len + 1, self.max_steps // 2)
