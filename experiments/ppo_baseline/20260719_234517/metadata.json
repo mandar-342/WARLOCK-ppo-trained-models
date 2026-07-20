@@ -1,0 +1,11 @@
+{
+    "best_model_path": "/teamspace/studios/this_studio/warlock/experiments/ppo_baseline/20260719_234517/best_model.zip",
+    "completed": true,
+    "experiment_name": "ppo_baseline",
+    "git_commit": "9c317ec524451bb646a568537803ae0c1c6c73af",
+    "model_path": "/teamspace/studios/this_studio/warlock/experiments/ppo_baseline/20260719_234517/model.zip",
+    "platform": "Linux-6.8.0-1058-aws-x86_64-with-glibc2.39",
+    "python_version": "3.12.11 | packaged by Anaconda, Inc. | (main, Jun  5 2025, 13:09:17) [GCC 11.2.0]",
+    "timestamp": "2026-07-19T23:45:17.819538+00:00",
+    "total_timesteps": 20000
+}

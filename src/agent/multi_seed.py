@@ -141,16 +141,64 @@ def run_multi_seed(
     group_name: str = "multi_seed",
     save: bool = True,
     no_checkpoints: bool = False,
+    trial: Any = None,
 ) -> dict[str, Any]:
     """
     Runs `run_single_seed` for every seed in `seeds`, then aggregates.
 
+    Parameters
+    ----------
+    trial
+        Optional `optuna.Trial`. When given, reports the running median
+        Sharpe of completed seeds after each seed finishes (step = number
+        of seeds completed so far), and raises `optuna.TrialPruned` if
+        the trial's pruner says to stop -- skipping this trial's
+        remaining seeds entirely.
+
+        Pruning here is *inter-seed*, not mid-training: it can only save
+        the cost of seeds not yet run, not partial training within a
+        seed. That's a deliberate simplification -- it needs no changes
+        to trainer.py/callbacks.py (no hook into SB3's training loop),
+        and most of a doomed trial's wasted cost is exactly its later
+        seeds, since one seed's Sharpe is usually a decent early signal
+        of whether a config is competitive at all.
+
+        Because pruning decisions happen between seeds, results are only
+        comparable trial-to-trial at the same "seeds completed" count --
+        this is what the pruner's step axis represents, not a wall-clock
+        or training-timestep axis.
+
     Returns a summary dict with per-seed results plus mean/std/median for
     sharpe_ratio and total_return, and the fraction of seeds that hit the
-    drawdown circuit breaker.
+    drawdown circuit breaker. If pruned, a summary with
+    `"pruned": True` and only the completed seeds is saved (when `save`)
+    before `optuna.TrialPruned` is raised.
     """
 
     per_seed_results: list[dict[str, Any]] = []
+
+    def _save_partial(pruned: bool) -> None:
+        if not save or not per_seed_results:
+            return
+        sharpe_values = [r["sharpe_ratio"] for r in per_seed_results]
+        return_values = [r["total_return"] for r in per_seed_results]
+        breaker_rate = sum(r["breaker_hit"] for r in per_seed_results) / len(per_seed_results)
+        partial_summary = {
+            "group_name": group_name,
+            "overrides": overrides or {},
+            "timesteps": timesteps,
+            "seeds": seeds,
+            "pruned": pruned,
+            "breaker_rate": breaker_rate,
+            "sharpe_ratio": _summarize(sharpe_values),
+            "total_return": _summarize(return_values),
+            "per_seed": per_seed_results,
+        }
+        output_dir = root("experiments", "multi_seed")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / f"{group_name}.json"
+        with output_path.open("w", encoding="utf-8") as fp:
+            json.dump(partial_summary, fp, indent=4, sort_keys=True, default=str)
 
     for seed in seeds:
         logger.info(
@@ -177,6 +225,28 @@ def run_multi_seed(
             result["breaker_hit"],
         )
 
+        if trial is not None:
+            import optuna  # local import: multi_seed.py stays usable without optuna installed when trial is None
+
+            running_median = statistics.median(
+                r["sharpe_ratio"] for r in per_seed_results
+            )
+            trial.report(running_median, step=len(per_seed_results))
+
+            if trial.should_prune():
+                logger.info(
+                    "[{}] pruned after {}/{} seeds (running median sharpe={:.4f})",
+                    group_name,
+                    len(per_seed_results),
+                    len(seeds),
+                    running_median,
+                )
+                _save_partial(pruned=True)
+                raise optuna.TrialPruned(
+                    f"Pruned after {len(per_seed_results)}/{len(seeds)} seeds "
+                    f"(running median sharpe={running_median:.4f})"
+                )
+
     sharpe_values = [r["sharpe_ratio"] for r in per_seed_results]
     return_values = [r["total_return"] for r in per_seed_results]
     breaker_rate = sum(r["breaker_hit"] for r in per_seed_results) / len(per_seed_results)
@@ -186,6 +256,7 @@ def run_multi_seed(
         "overrides": overrides or {},
         "timesteps": timesteps,
         "seeds": seeds,
+        "pruned": False,
         "breaker_rate": breaker_rate,
         "sharpe_ratio": _summarize(sharpe_values),
         "total_return": _summarize(return_values),

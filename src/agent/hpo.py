@@ -1,47 +1,49 @@
 from __future__ import annotations
 
 """
-Optuna sweep on top of the multi-seed harness.
+Optuna sweep on top of the multi-seed harness, with support for running
+multiple trials concurrently (--n-jobs > 1).
 
-Objective (per the discussion this implements):
-    score = median(sharpe_across_seeds) - lambda * breaker_rate
+Concurrency model
+------------------
+Trials run as **separate OS processes**, not threads, for two reasons
+specific to this project:
 
-Median rather than mean so one blown-up/lucky seed doesn't dominate with
-only 3-4 seeds per trial. The breaker-rate penalty is a *soft* term
-(rather than a hard filter) so the sweep still gets gradient signal even
-when most/all configs currently hit the drawdown breaker (true for this
-project's baseline runs) -- a hard filter would disqualify almost every
-trial early on and starve the search. Treat the penalized ranking as a
-shortlist: manually sanity-check the top trials' breaker_rate afterwards
-(see --show-top) rather than trusting the top-1 blindly, since a config
-can still score well by being great on its non-breaking seeds alone.
+1. Config isolation. `src/utils/config.py` loads config.yaml once into a
+   module-level dict that every module (`PPOTrainer`, `GymBitcoinEnv`,
+   ...) holds a reference to, and `config_overrides.py` mutates that dict
+   in place per run. Within a single process, concurrent trials
+   mutating the same dict would race. Across processes there's no such
+   risk: each process gets its own independent copy of everything at
+   startup, so config.py itself needs no restructuring for this to be
+   safe -- the isolation is free.
+2. CUDA. PyTorch/CUDA contexts don't fork safely, so with a shared GPU
+   (this project's setup), process-based parallelism is the technically
+   correct choice here, not just the simpler one.
 
-Branch awareness
------------------
-The search space is assembled from three parts:
-  1. PPO hyperparameters -- identical on both branches.
-  2. Env/reward hyperparameters -- identical on both branches (both read
-     `env.*` / `reward.*`; the futures branch just interprets weights as
-     signed).
-  3. Futures-only hyperparameters (`portfolio.short.leverage`,
-     `portfolio.short.maintenance_margin_ratio`) -- only added to the
-     search space when running on the `futures` branch, since `main`'s
-     SpotPortfolio has no such keys and PPOTrainer/GymBitcoinEnv on main
-     never reads them.
+With --n-jobs > 1, this script spawns N subprocesses (each re-invoking
+this same module with `--worker`), all pointed at the same Optuna
+storage, and waits for them. Each worker independently pulls trials via
+`study.optimize(n_trials=trials_per_worker)`. This is Optuna's standard
+local-multiprocess pattern.
 
-Branch is detected via git, not hardcoded, so the same script works
-whichever branch you have checked out.
+Storage: defaults to `optuna.storages.JournalStorage` with a
+`JournalFileBackend` (safe for concurrent local processes via file
+locking) when available (Optuna >= 3.1), falling back to a SQLite URL
+otherwise. Either way, all worker processes must share one storage
+location -- that's what makes them one sweep rather than N independent
+sweeps.
 
-Concurrency: kept sequential (n_jobs=1). Config overrides are applied by
-mutating the shared, module-level config dict in place (see
-config_overrides.py); running trials in parallel processes/threads would
-race on that dict. If you need parallel trials, give each worker its own
-process with its own config.yaml/import, or refactor config threading
-before increasing n_jobs.
+GPU note: all workers share whatever `training.device` resolves to
+(default "auto" -> the single GPU here). CUDA contexts from multiple
+processes on one GPU is normal and supported, but memory is shared and
+finite -- if you see OOMs, reduce --n-jobs or `ppo.batch_size` in the
+search space.
 """
 
 import argparse
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -50,6 +52,14 @@ from loguru import logger
 
 from src.agent.multi_seed import run_multi_seed
 from src.utils import root
+
+try:
+    from optuna.storages import JournalStorage
+    from optuna.storages.journal import JournalFileBackend
+
+    _HAS_JOURNAL_STORAGE = True
+except ImportError:  # Optuna < 3.1
+    _HAS_JOURNAL_STORAGE = False
 
 
 def current_branch() -> str:
@@ -131,6 +141,7 @@ def make_objective(
             timesteps=timesteps,
             group_name=f"optuna_trial_{trial.number:04d}",
             no_checkpoints=no_checkpoints,
+            trial=trial,
         )
 
         median_sharpe = summary["sharpe_ratio"]["median"]
@@ -154,9 +165,61 @@ def make_objective(
     return objective
 
 
+def _resolve_storage_arg(branch: str) -> str:
+    """
+    Picks a default storage location shared by all worker processes.
+    Prefers Optuna's JournalStorage (file-lock based, safe for
+    concurrent local processes) when available; falls back to SQLite
+    for older Optuna installs.
+    """
+    if _HAS_JOURNAL_STORAGE:
+        journal_path = root("experiments") / f"optuna_{branch}.journal"
+        journal_path.parent.mkdir(parents=True, exist_ok=True)
+        return f"journal://{journal_path}"
+
+    db_path = root("experiments") / f"optuna_{branch}.db"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    return f"sqlite:///{db_path}"
+
+
+def _build_storage(storage_arg: str):
+    """Turns a --storage value into whatever optuna.create_study expects."""
+    if storage_arg.startswith("journal://"):
+        journal_path = storage_arg[len("journal://"):]
+        return JournalStorage(JournalFileBackend(journal_path))
+    return storage_arg  # sqlite:// or any other optuna-native URL
+
+
+def _report_top_trials(study: optuna.Study, show_top: int) -> None:
+    top_trials = sorted(
+        (t for t in study.trials if t.value is not None),
+        key=lambda t: t.value,
+        reverse=True,
+    )[:show_top]
+
+    logger.info("Top {} trials (score | median_sharpe | breaker_rate):", len(top_trials))
+    for t in top_trials:
+        logger.info(
+            "  #{:04d} score={:.4f} median_sharpe={:.4f} breaker_rate={:.2f} params={}",
+            t.number,
+            t.value,
+            t.user_attrs.get("median_sharpe", float("nan")),
+            t.user_attrs.get("breaker_rate", float("nan")),
+            t.params,
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Optuna sweep for WARLOCK PPO.")
     parser.add_argument("--n-trials", type=int, default=20)
+    parser.add_argument(
+        "--n-jobs",
+        type=int,
+        default=1,
+        help="Number of concurrent worker PROCESSES sharing one sweep "
+        "(see module docstring for why processes, not threads). "
+        "--n-trials is split across them.",
+    )
     parser.add_argument(
         "--seeds",
         type=str,
@@ -185,9 +248,10 @@ def main() -> int:
         "--storage",
         type=str,
         default=None,
-        help="Optuna storage URL, e.g. sqlite:///experiments/optuna.db. "
-        "Defaults to experiments/optuna_<branch>.db so trials resume "
-        "across interrupted runs.",
+        help="Optuna storage location shared by all workers. Defaults to "
+        "a JournalStorage file (or SQLite if Optuna < 3.1) under "
+        "experiments/, keyed by branch, so trials resume across "
+        "interrupted/re-launched sweeps.",
     )
     parser.add_argument(
         "--show-top",
@@ -204,6 +268,36 @@ def main() -> int:
         "sets adds up fast; model.zip/best_model.zip are always kept "
         "either way.",
     )
+    parser.add_argument(
+        "--worker",
+        action="store_true",
+        help=argparse.SUPPRESS,  # internal: set on the subprocesses this script spawns itself
+    )
+    parser.add_argument(
+        "--pruner",
+        type=str,
+        choices=["median", "none"],
+        default="median",
+        help="Optuna pruner. 'median' stops a trial's remaining seeds "
+        "once its running-median Sharpe (after each completed seed) "
+        "falls below the median of other trials at the same "
+        "seeds-completed checkpoint. 'none' disables pruning.",
+    )
+    parser.add_argument(
+        "--n-startup-trials",
+        type=int,
+        default=5,
+        help="Trials always run to completion before the pruner starts "
+        "judging (needs a baseline population to compare against).",
+    )
+    parser.add_argument(
+        "--n-warmup-seeds",
+        type=int,
+        default=1,
+        help="Seeds completed within a trial before that trial becomes "
+        "eligible for pruning (per-trial warmup, on the "
+        "seeds-completed step axis -- not related to --n-startup-trials).",
+    )
 
     args = parser.parse_args()
 
@@ -211,17 +305,100 @@ def main() -> int:
     logger.info("Detected git branch: {}", branch)
 
     seeds = [int(s) for s in args.seeds.split(",") if s.strip()]
+    storage_arg = args.storage or _resolve_storage_arg(branch)
 
-    storage = args.storage
-    if storage is None:
-        db_path = root("experiments") / f"optuna_{branch}.db"
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        storage = f"sqlite:///{db_path}"
+    study_name = f"{args.study_name}_{branch}"
 
+    if args.pruner == "median":
+        pruner = optuna.pruners.MedianPruner(
+            n_startup_trials=args.n_startup_trials,
+            n_warmup_steps=args.n_warmup_seeds,
+        )
+    else:
+        pruner = optuna.pruners.NopPruner()
+
+    # Orchestrator path: spawn --n-jobs worker subprocesses, each running
+    # this same module with --worker and a share of --n-trials, all
+    # pointed at the same storage. This process itself does no training.
+    if args.n_jobs > 1 and not args.worker:
+        # Make sure the study exists before any worker races to create it.
+        optuna.create_study(
+            study_name=study_name,
+            storage=_build_storage(storage_arg),
+            direction="maximize",
+            pruner=pruner,
+            load_if_exists=True,
+        )
+
+        base, remainder = divmod(args.n_trials, args.n_jobs)
+        trials_per_worker = [base + (1 if i < remainder else 0) for i in range(args.n_jobs)]
+        trials_per_worker = [n for n in trials_per_worker if n > 0]
+
+        logger.info(
+            "Launching {} worker processes on branch '{}' (trials per worker: {})",
+            len(trials_per_worker),
+            branch,
+            trials_per_worker,
+        )
+
+        processes: list[subprocess.Popen] = []
+        for worker_trials in trials_per_worker:
+            cmd = [
+                sys.executable,
+                "-m",
+                "src.agent.hpo",
+                "--n-trials",
+                str(worker_trials),
+                "--seeds",
+                args.seeds,
+                "--lambda-penalty",
+                str(args.lambda_penalty),
+                "--study-name",
+                args.study_name,
+                "--storage",
+                storage_arg,
+                "--pruner",
+                args.pruner,
+                "--n-startup-trials",
+                str(args.n_startup_trials),
+                "--n-warmup-seeds",
+                str(args.n_warmup_seeds),
+                "--worker",
+            ]
+            if args.timesteps is not None:
+                cmd += ["--timesteps", str(args.timesteps)]
+            if args.keep_checkpoints:
+                cmd += ["--keep-checkpoints"]
+
+            processes.append(subprocess.Popen(cmd, cwd=str(root())))
+
+        failures = 0
+        for process in processes:
+            return_code = process.wait()
+            if return_code != 0:
+                failures += 1
+                logger.error("Worker pid={} exited with code {}", process.pid, return_code)
+
+        if failures:
+            logger.warning("{} of {} workers failed -- see logs above.", failures, len(processes))
+
+        study = optuna.load_study(study_name=study_name, storage=_build_storage(storage_arg))
+        logger.success(
+            "Sweep complete. Best score={:.4f} (trial #{})",
+            study.best_value,
+            study.best_trial.number,
+        )
+        _report_top_trials(study, args.show_top)
+
+        return 1 if failures else 0
+
+    # Single-process path: also used for each spawned worker (--worker),
+    # and for the default --n-jobs=1 case.
     study = optuna.create_study(
-        study_name=f"{args.study_name}_{branch}",
-        storage=storage,
+        study_name=study_name,
+        storage=_build_storage(storage_arg),
         direction="maximize",
+        pruner=pruner,
         load_if_exists=True,
     )
 
@@ -234,31 +411,20 @@ def main() -> int:
             no_checkpoints=not args.keep_checkpoints,
         ),
         n_trials=args.n_trials,
-        n_jobs=1,  # sequential -- see module docstring on config mutation
+        n_jobs=1,  # this process contributes one trial at a time; see --n-jobs for multi-process concurrency
     )
+
+    # A spawned worker leaves the summary to the orchestrator, which
+    # reports over the full shared study once every worker has finished.
+    if args.worker:
+        return 0
 
     logger.success(
         "Sweep complete. Best score={:.4f} (trial #{})",
         study.best_value,
         study.best_trial.number,
     )
-
-    top_trials = sorted(
-        (t for t in study.trials if t.value is not None),
-        key=lambda t: t.value,
-        reverse=True,
-    )[: args.show_top]
-
-    logger.info("Top {} trials (score | median_sharpe | breaker_rate):", len(top_trials))
-    for t in top_trials:
-        logger.info(
-            "  #{:04d} score={:.4f} median_sharpe={:.4f} breaker_rate={:.2f} params={}",
-            t.number,
-            t.value,
-            t.user_attrs.get("median_sharpe", float("nan")),
-            t.user_attrs.get("breaker_rate", float("nan")),
-            t.params,
-        )
+    _report_top_trials(study, args.show_top)
 
     return 0
 
