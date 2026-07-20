@@ -82,10 +82,7 @@ def sample_params(trial: optuna.Trial, branch: str) -> dict[str, Any]:
     params: dict[str, Any] = {
         # -- PPO hyperparameters (both branches) --
         "ppo.learning_rate": trial.suggest_float(
-            "learning_rate", 1e-5, 1e-3, log=True
-        ),
-        "ppo.n_steps": trial.suggest_categorical(
-            "n_steps", [1024, 2048, 4096]
+            "learning_rate", 1e-5, 3e-4, log=True
         ),
         "ppo.batch_size": trial.suggest_categorical(
             "batch_size", [32, 64, 128]
@@ -116,7 +113,7 @@ def sample_params(trial: optuna.Trial, branch: str) -> dict[str, Any]:
         # Futures-only knobs -- absent on main's SpotPortfolio, and
         # meaningless there, so only sampled on this branch.
         params["portfolio.short.leverage"] = trial.suggest_float(
-            "short_leverage", 1.0, 5.0
+            "short_leverage", 2.5, 3.5
         )
         params["portfolio.short.maintenance_margin_ratio"] = trial.suggest_float(
             "maintenance_margin_ratio", 0.02, 0.10

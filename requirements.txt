@@ -1,0 +1,16 @@
+ccxt==4.5.56
+pandas==3.0.3
+numpy==2.4.6
+pyyaml==6.0.3
+pyarrow==24.0.0
+loguru==0.7.2
+TA-Lib == 0.6.8
+matplotlib==3.9.2
+seaborn==0.13.2
+gymnasium>=0.29.0
+stable-baselines3>=2.0.0
+torch>=2.0.0
+reportlab>=4.1
+optuna>=3.6
+tensorboard
+stable-baselines3[extra]
