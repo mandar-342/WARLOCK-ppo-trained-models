@@ -61,11 +61,27 @@ class GymBitcoinEnv(gym.Env):
         self.load_data()
 
         # Define spaces
-        # obs = market window + portfolio vector
+        # obs = single-timestep market features + portfolio vector.
+        #
+        # This branch trains a recurrent (LSTM) policy, which is
+        # expected to carry temporal context in its own hidden state
+        # across the episode rather than being handed a manually
+        # flattened lookback window each step (the previous MLP-era
+        # approach: `window_len * n_features` flattened into one
+        # vector). Feeding a flattened window into an LSTM would waste
+        # the point of the recurrence -- the network would be relearning
+        # temporal structure that's already been hand-truncated to
+        # `window_len` steps and pre-flattened. `window_len` is still
+        # used below (see reset()) purely to pick a random episode start
+        # far enough into the data for all rolling-window *features*
+        # (ATR, z-scores, etc., computed upstream in the feature
+        # pipeline) to already be warmed up -- it no longer shapes the
+        # observation itself.
+        #
         # portfolio vector: [cash_weight, *asset_weights, unrealized_pnl_pct, holding_time_norm]
         # = 1 (cash) + n_assets (weights) + 1 (unrealized pnl) + 1 (holding time)
         portfolio_vec_dim = 3 + self.n_assets
-        obs_dim = self.window_len * self.n_features + portfolio_vec_dim
+        obs_dim = self.n_features + portfolio_vec_dim
         self.observation_space = spaces.Box(
             low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32
         )
@@ -109,8 +125,8 @@ class GymBitcoinEnv(gym.Env):
         self.target_atr_pct=config.get("risk", {}).get("target_atr_pct", 1.0)
 
         logger.info(
-            f"GymBitcoinEnv initialized: "
-            f"data={self.data_path}, window={self.window_len}, "
+            f"GymBitcoinEnv initialized (single-timestep / recurrent-policy obs): "
+            f"data={self.data_path}, episode_start_warmup={self.window_len}, "
             f"features={self.n_features}, obs_dim={obs_dim}, "
             f"max_steps={self.max_steps}, assets={self.portfolio.symbols}"
         )
@@ -148,8 +164,11 @@ class GymBitcoinEnv(gym.Env):
             )
 
     def get_obs(self) -> np.ndarray:
-        start = self.current_step - self.window_len
-        market_window = self.features[start:self.current_step].flatten()
+        # Single timestep of market features. Temporal context is the
+        # recurrent policy's job (via its hidden state across steps),
+        # not this method's -- see the observation_space comment in
+        # __init__ for why this changed from a flattened window.
+        market_step = self.features[self.current_step]
 
         prices = [self.prices[self.current_step]]
         net_weights = self.portfolio.current_weights(prices)
@@ -170,7 +189,7 @@ class GymBitcoinEnv(gym.Env):
             [portfolio_vec, np.array([self.holding_time / 100.0], dtype=np.float32)]
         )
 
-        return np.concatenate([market_window, portfolio_vec])
+        return np.concatenate([market_step, portfolio_vec])
 
     def reset(self, *, seed: int | None = None, options: dict | None = None):
         super().reset(seed=seed)
