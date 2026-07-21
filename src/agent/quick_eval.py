@@ -15,14 +15,14 @@ simply running out of data.
 from typing import Any
 
 import pandas as pd
-from stable_baselines3 import PPO
+from sb3_contrib import RecurrentPPO
 
 from src.analytics.metrics import MetricsCalculator
 from src.env.gym_bitcoin import GymBitcoinEnv
 from src.utils import config, root
 
 
-def run_quick_episode(model: PPO) -> tuple[dict[str, Any], bool]:
+def run_quick_episode(model: RecurrentPPO) -> tuple[dict[str, Any], bool]:
     """
     Runs one deterministic evaluation episode on the held-out test set.
 
@@ -47,6 +47,8 @@ def run_quick_episode(model: PPO) -> tuple[dict[str, Any], bool]:
     )
 
     observation, _ = env.reset(seed=evaluation_cfg.get("seed", 42))
+    lstm_state = None
+    episode_start = True
 
     equity_curve: list[float] = []
     trade_returns: list[float] = []
@@ -58,12 +60,16 @@ def run_quick_episode(model: PPO) -> tuple[dict[str, Any], bool]:
 
     while not (terminated or truncated):
 
-        action, _ = model.predict(
+        action,  lstm_state = model.predict(
             observation,
+            state=lstm_state,
+             episode_start=episode_start,
             deterministic=evaluation_cfg["deterministic"],
         )
 
         observation, reward, terminated, truncated, info = env.step(action)
+        episode_start = bool(
+                   terminated or truncated)
         final_info = info
 
         equity_curve.append(float(info["capital"]))
