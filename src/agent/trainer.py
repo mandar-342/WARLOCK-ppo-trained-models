@@ -8,7 +8,7 @@ import torch
 from loguru import logger
 from sb3_contrib import RecurrentPPO
 from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.vec_env import (DummyVecEnv, SubprocVecEnv,)
 
 from src.agent.callbacks import CallbackFactory
 from src.agent.experiment import ExperimentManager
@@ -56,6 +56,9 @@ class PPOTrainer:
         )
         
         self._device = self._training_cfg.get("device", "auto")
+        self._n_envs = int(
+        self._training_cfg.get("n_envs", 1)
+              )
 
         self._seed = set_global_seed(
             int(self._training_cfg["seed"])
