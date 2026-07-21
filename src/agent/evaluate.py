@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 from loguru import logger
-from stable_baselines3 import PPO
+from sb3_contrib import RecurrentPPO
 
 from src.analytics.metrics import MetricsCalculator
 from src.analytics.plots import PlotGenerator
@@ -53,7 +53,7 @@ class Evaluator:
             self._model_path,
         )
 
-        self._model = PPO.load(
+        self._model = RecurrentPPO.load(
             self._model_path,
             device=self._training_cfg["device"],
         )
@@ -133,20 +133,25 @@ class Evaluator:
         observation, _ = self._environment.reset(
             seed=self._evaluation_cfg.get("seed", 42)
         )
+        lstm_state = None
+        episode_start = True
 
         terminated = False
         truncated = False
 
         while not (terminated or truncated):
 
-            action, _ = self._model.predict(
+            action, lstm_state = self._model.predict(
                 observation,
+                state=lstm_state,
+                episode_start=episode_start,
                 deterministic=self._evaluation_cfg["deterministic"],
             )
 
             observation, reward, terminated, truncated, info = (
                 self._environment.step(action)
             )
+            episode_start = bool(terminated or truncated)
             self._action_history.append(
        {
         "step": int(info["step"]),
