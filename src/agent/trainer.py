@@ -6,7 +6,7 @@ from xml.parsers.expat import model
 
 import torch
 from loguru import logger
-from stable_baselines3 import PPO
+from sb3_contrib import RecurrentPPO
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
 
@@ -76,7 +76,7 @@ class PPOTrainer:
             eval_env=self._eval_env,
         ).build()
 
-        self._model: PPO | None = None
+        self._model: RecurrentPPO | None = None
 
     def _build_environment(
         self,
@@ -106,6 +106,10 @@ class PPOTrainer:
         return {
             "activation_fn": torch.nn.ReLU,
              "net_arch": architecture["net_arch"],
+            "lstm_hidden_size": architecture["lstm_hidden_size"],
+            "n_lstm_layers": architecture["n_lstm_layers"],
+            "shared_lstm": architecture["shared_lstm"],
+            "enable_critic_lstm": architecture["enable_critic_lstm"],
         }
         
     def _remaining_timesteps(self) -> int:
@@ -153,7 +157,7 @@ class PPOTrainer:
 
         return remaining
 
-    def _build_model(self) -> PPO:
+    def _build_model(self) -> RecurrentPPO:
         """
         Creates the PPO model.
         """
@@ -168,7 +172,7 @@ class PPOTrainer:
         resume_checkpoint,
             )
 
-            model = PPO.load(
+            model = RecurrentPPO.load(
         resume_checkpoint,
         env=self._train_env,
         device=self._device,
@@ -180,8 +184,8 @@ class PPOTrainer:
 
             return model
 
-        model = PPO(
-    policy="MlpPolicy",
+        model = RecurrentPPO(
+    policy=self._ppo_cfg["policy"],
     env=self._train_env,
     learning_rate=float(self._ppo_cfg["learning_rate"]),
     n_steps=int(self._ppo_cfg["n_steps"]),
@@ -208,7 +212,7 @@ class PPOTrainer:
 
         return model
 
-    def train(self) -> PPO:
+    def train(self) -> RecurrentPPO:
         """
         Trains the PPO agent.
 
@@ -262,7 +266,7 @@ class PPOTrainer:
         return self._model
     
     @property
-    def model(self) -> PPO:
+    def model(self) -> RecurrentPPO:
         """
         Returns the trained PPO model.
 
@@ -288,7 +292,7 @@ class PPOTrainer:
     def load(
         self,
         model_path: str | None = None,
-    ) -> PPO:
+    ) -> RecurrentPPO:
         """
         Loads a PPO model.
 
@@ -315,7 +319,7 @@ class PPOTrainer:
             path,
         )
 
-        self._model = PPO.load(
+        self._model = RecurrentPPO.load(
             str(path),
             env=self._train_env,
             device=self._device,
