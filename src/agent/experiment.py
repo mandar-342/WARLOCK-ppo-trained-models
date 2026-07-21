@@ -190,12 +190,21 @@ class ExperimentManager:
         """
         Builds experiment metadata.
         """
+        training_cfg = config.get("training", {})
+        ppo_cfg = config.get("ppo", {})
+        
         return {
             "experiment_name": self._experiment_name,
             "timestamp": self._started_at.isoformat(),
             "git_commit": self._git_commit(),
             "python_version": sys.version,
             "platform": platform.platform(),
+            "algorithm": "PPO",
+            "policy": ppo_cfg.get("policy"),
+            "device": training_cfg.get("device"),
+             "seed": training_cfg.get("seed"),
+            "n_envs": training_cfg.get("n_envs", 1),
+            "policy_kwargs": ppo_cfg.get("policy_kwargs", {}),
         }
         
         
