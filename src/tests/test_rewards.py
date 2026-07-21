@@ -56,32 +56,54 @@ def test_overtrading_strictly_penalizes_reward():
     assert rc_b.last_components["overtrade_penalty"] > 0.0
 
 def test_negative_returns_yield_negative_sharpe():
-    rc = RewardCalculator()
+    # Explicit sharpe_aggregation_steps=1 isolates the per-step sharpe
+    # calculation itself from the aggregation behavior (default 12 from
+    # config.yaml) exercised in test_sharpe_aggregation_smooths_reward
+    # below.
+    rc = RewardCalculator(sharpe_aggregation_steps=1)
     rc.calculate(step_return=-0.01, drawdown=0.0, position_change=0.0)
     reward = rc.calculate(step_return=-0.01, drawdown=0.0, position_change=0.0)
     logger.info(f"Consistent losses: reward={reward:.6f} components={rc.last_components}")
     assert reward < 0.0
 
+def test_sharpe_aggregation_smooths_reward():
+    # With sharpe_aggregation_steps=4, the returns_buffer should only
+    # gain a new sample every 4th calculate() call, and that sample
+    # should be the *sum* of the 4 intervening step returns rather than
+    # each one individually -- this is the fix for the sharpe term
+    # previously being estimated from tiny, single-timestep samples.
+    rc = RewardCalculator(sharpe_aggregation_steps=4, sharpe_weight=0.5)
+    for i in range(3):
+        rc.calculate(step_return=0.01, drawdown=0.0, position_change=0.0)
+        assert len(rc.returns_buffer) == 0, "buffer should not update before aggregation completes"
+    rc.calculate(step_return=0.01, drawdown=0.0, position_change=0.0)
+    assert len(rc.returns_buffer) == 1
+    assert abs(rc.returns_buffer[0] - 0.04) < 1e-9, "buffer sample should be the sum of the 4 step returns"
+
 def test_reset_clears_buffer_and_components():
     rc = RewardCalculator()
     rc.calculate(step_return=0.02, drawdown=0.1, position_change=0.5)
-    # `_sharpe_reward` is now actually called by `calculate()` (previously
-    # dead code -- see rewards.py), so one call leaves one entry in the
-    # returns buffer. reset() should clear it back to empty.
-    assert len(rc.returns_buffer) == 1
+    # Default sharpe_aggregation_steps (12, from config.yaml) means a
+    # single calculate() call only adds to the pending-returns
+    # accumulator; the returns_buffer itself only gets a new sample once
+    # 12 steps have accumulated. reset() should clear both back to empty.
+    assert len(rc.returns_buffer) == 0
+    assert len(rc._pending_returns) == 1
     rc.reset()
     assert len(rc.returns_buffer) == 0
+    assert len(rc._pending_returns) == 0
     assert rc.last_components["total_reward"] == 0.0
-    logger.info("Reset correctly clears returns buffer and last_components")
+    logger.info("Reset correctly clears returns buffer, pending returns, and last_components")
 
 def test_single_sample_buffer():
     rc = RewardCalculator()
     reward = rc.calculate(step_return=0.05, drawdown=0.0, position_change=0.0)
 
-    # A single sample is below MIN_BUFFER_SIZE, so the sharpe component is
-    # still in its warm-up state (0.0) rather than absent -- `calculate()`
-    # always reports both components now that `_sharpe_reward` is actually
-    # wired in.
+    # A single sample hasn't completed one aggregation window yet
+    # (config default sharpe_aggregation_steps=12), so the sharpe
+    # component is still in its warm-up state (0.0) rather than absent --
+    # `calculate()` always reports both components now that
+    # `_sharpe_reward` is actually wired in.
     assert "sharpe_reward" in rc.last_components
     assert rc.last_components["sharpe_reward"] == 0.0
     assert abs(reward - np.tanh(0.05 * 100.0)) < 1e-9
@@ -151,6 +173,7 @@ TESTS = [
     test_drawdown_strictly_penalizes_reward,
     test_overtrading_strictly_penalizes_reward,
     test_negative_returns_yield_negative_sharpe,
+    test_sharpe_aggregation_smooths_reward,
     test_reset_clears_buffer_and_components,
     test_single_sample_buffer,
     test_env_step_exposes_reward_components,

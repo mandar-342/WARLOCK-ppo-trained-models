@@ -81,7 +81,24 @@ class GymBitcoinEnv(gym.Env):
         self.current_weights = [0.0] * self.n_assets
         self.holding_time = 0
         self.peak_value = 0.0
-        self.reward_calc = RewardCalculator()
+        # Read reward config live (like env_cfg above), rather than
+        # relying on RewardCalculator's constructor defaults: those
+        # defaults are module-level constants computed once when
+        # rewards.py is first imported, before any per-run config
+        # override is applied. In a long-lived process running many
+        # trials/seeds (the multi-seed harness, the Optuna sweep), that
+        # meant every reward.* override was silently ignored after the
+        # first import -- every run used whatever was in config.yaml on
+        # disk at process start, regardless of what was actually swept.
+        reward_cfg = config.get("reward", {})
+        self.reward_calc = RewardCalculator(
+            window=reward_cfg.get("sharpe_window", 100),
+            step_return_weight=reward_cfg.get("step_return_weight", 1.0),
+            sharpe_weight=reward_cfg.get("sharpe_weight", 0.10),
+            drawdown_scale=reward_cfg.get("drawdown_penalty_scale", 0.1),
+            overtrade_scale=reward_cfg.get("overtrade_penalty_scale", 0.01),
+            sharpe_aggregation_steps=reward_cfg.get("sharpe_aggregation_steps", 1),
+        )
         #  Trade State
         self.position_open = False
         self.entry_price = 0.0

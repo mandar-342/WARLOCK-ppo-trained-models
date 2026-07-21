@@ -104,7 +104,17 @@ reward:
   sharpe_weight: 0.10
   drawdown_penalty_scale: 0.1
   overtrade_penalty_scale: 0.01
-  min_buffer_size: 2
+  # Number of steps summed into one sample before it enters the rolling
+  # Sharpe buffer (see src/env/rewards.py). 1 = old per-step behavior;
+  # raised to 12 so each sample reflects sustained return over ~12 steps
+  # rather than single-timestep noise. Tunable, and included in the
+  # Optuna search space (src/agent/hpo.py) as `sharpe_aggregation_steps`.
+  sharpe_aggregation_steps: 12
+  # Raised from 2: with aggregation_steps=12, min_buffer_size=2 means
+  # only 2 aggregated (24-step) samples before the ratio is trusted --
+  # still thin. 5 aggregated samples (~60 steps of history) is a more
+  # reasonable floor before the Sharpe term starts contributing.
+  min_buffer_size: 5
   epsilon: 0.01
 
 

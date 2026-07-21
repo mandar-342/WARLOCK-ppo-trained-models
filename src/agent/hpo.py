@@ -104,8 +104,21 @@ def sample_params(trial: optuna.Trial, branch: str) -> dict[str, Any]:
         "reward.overtrade_penalty_scale": trial.suggest_float(
             "overtrade_penalty_scale", 1e-4, 0.05, log=True
         ),
+        # Narrowed from [0.0, 0.5]: the last sweep found sharpe_weight
+        # negatively correlated with median Sharpe (-0.42) and positively
+        # correlated with the drawdown-breaker rate (+0.66) -- likely
+        # because the term was estimated from tiny, noisy samples (see
+        # the aggregation fix in rewards.py). Re-widen this once the
+        # aggregated version has its own trial data to judge by.
         "reward.sharpe_weight": trial.suggest_float(
-            "sharpe_weight", 0.0, 0.5
+            "sharpe_weight", 0.0, 0.15
+        ),
+        # New dimension: how many steps get aggregated into one Sharpe
+        # buffer sample (see SHARPE_AGGREGATION_STEPS in rewards.py).
+        # 1 = old per-step behavior; higher values trade responsiveness
+        # for a less noisy risk estimate.
+        "reward.sharpe_aggregation_steps": trial.suggest_categorical(
+            "sharpe_aggregation_steps", [1, 6, 12, 24, 48]
         ),
     }
 

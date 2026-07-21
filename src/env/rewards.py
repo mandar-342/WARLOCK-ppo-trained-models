@@ -10,6 +10,22 @@ DRAWDOWN_PENALTY_SCALE = config['reward']['drawdown_penalty_scale']
 OVERTRADE_PENALTY_SCALE = config['reward']['overtrade_penalty_scale']
 MIN_BUFFER_SIZE = config['reward']['min_buffer_size']
 EPSILON = config['reward']['epsilon']
+# How many steps of step_return get aggregated (summed) into one sample
+# before it's pushed into the rolling Sharpe buffer. Previously every
+# single step's return was pushed straight into the buffer, so with
+# MIN_BUFFER_SIZE=2 the ratio was frequently estimated from 2 raw,
+# single-timestep returns -- a near-meaningless mean/std estimate that
+# can swing wildly before being clipped to [-5, 5]. That's a plausible
+# cause of the observed pattern where higher sharpe_weight correlated
+# with *worse* outcomes and higher drawdown-breaker rates: the term was
+# injecting noise, not a genuine risk-adjusted signal. Aggregating
+# returns over a short window first makes each buffer sample represent
+# sustained performance over several steps rather than tick noise,
+# closer to what "Sharpe ratio" is meant to capture. Defaults to 1
+# (= old per-step behavior) if the config key isn't present, so this is
+# opt-in via config/sweep rather than a silent behavior change for
+# anyone not on the updated config.yaml.
+SHARPE_AGGREGATION_STEPS = config['reward'].get('sharpe_aggregation_steps', 1)
 
 class RewardCalculator:
     def __init__(
@@ -19,13 +35,17 @@ class RewardCalculator:
         sharpe_weight: float = SHARPE_WEIGHT,
         drawdown_scale: float = DRAWDOWN_PENALTY_SCALE,
         overtrade_scale: float = OVERTRADE_PENALTY_SCALE,
+        sharpe_aggregation_steps: int = SHARPE_AGGREGATION_STEPS,
     ):
         self.window = window
         self.step_return_weight = step_return_weight
         self.sharpe_weight = sharpe_weight
         self.drawdown_scale = drawdown_scale
         self.overtrade_scale = overtrade_scale
+        self.sharpe_aggregation_steps = max(1, int(sharpe_aggregation_steps))
         self.returns_buffer: deque = deque(maxlen=window)
+        self._pending_returns: list = []
+        self._last_sharpe_component: float = 0.0
         self.last_components: dict = {
             "reward_return": 0.0,
             "sharpe_reward": 0.0,
@@ -36,6 +56,8 @@ class RewardCalculator:
 
     def reset(self) -> None:
         self.returns_buffer.clear()
+        self._pending_returns = []
+        self._last_sharpe_component = 0.0
         self.last_components = {
             "reward_return": 0.0,
             "sharpe_reward": 0.0,
@@ -45,14 +67,27 @@ class RewardCalculator:
         }
 
     def _sharpe_reward(self, step_return: float) -> float:
-        self.returns_buffer.append(step_return)
+        self._pending_returns.append(step_return)
+
+        # Between aggregation boundaries, hold the last computed ratio
+        # rather than returning 0.0 -- returning to 0.0 every intermediate
+        # step would itself be a noisy, sawtooth signal working against
+        # the whole point of aggregating in the first place.
+        if len(self._pending_returns) < self.sharpe_aggregation_steps:
+            return self._last_sharpe_component
+
+        aggregated_return = float(np.sum(self._pending_returns))
+        self._pending_returns = []
+        self.returns_buffer.append(aggregated_return)
 
         if len(self.returns_buffer) < MIN_BUFFER_SIZE:
+            self._last_sharpe_component = 0.0
             return 0.0
 
         mean_r = np.mean(self.returns_buffer)
         std_r = np.std(self.returns_buffer) + EPSILON
-        return float(np.clip(mean_r / std_r, -5.0, 5.0))
+        self._last_sharpe_component = float(np.clip(mean_r / std_r, -5.0, 5.0))
+        return self._last_sharpe_component
 
     def _drawdown_penalty(self, drawdown: float) -> float:
         return self.drawdown_scale * max(drawdown, 0.0)
@@ -123,4 +158,8 @@ class RewardCalculator:
             return 0.0
         mean_r = np.mean(self.returns_buffer)
         std_r  = np.std(self.returns_buffer) + EPSILON
-        return float((mean_r / std_r) * np.sqrt(8760))
+        # 8760 assumes hourly steps/year; each buffer entry now spans
+        # `sharpe_aggregation_steps` steps, so the number of samples/year
+        # (and hence the annualization factor) scales down accordingly.
+        periods_per_year = 8760 / self.sharpe_aggregation_steps
+        return float((mean_r / std_r) * np.sqrt(periods_per_year))

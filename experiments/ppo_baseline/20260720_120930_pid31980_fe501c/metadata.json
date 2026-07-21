@@ -1,0 +1,7 @@
+{
+    "experiment_name": "ppo_baseline",
+    "git_commit": "45f654f56b35c1ef0cca00487c81d5ee1b088c85",
+    "platform": "Windows-10-10.0.26200-SP0",
+    "python_version": "3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)]",
+    "timestamp": "2026-07-20T12:09:30.547287+00:00"
+}
