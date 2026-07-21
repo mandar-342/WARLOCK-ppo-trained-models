@@ -149,12 +149,9 @@ ppo:
   policy: MlpPolicy
 
   policy_kwargs:
-
-  net_arch:
-
-      pi: [256, 128,64]
-
-      vf: [256, 128,64]
+    net_arch:
+        pi: [256, 128,64]
+        vf: [256, 128,64]
 
   activation_fn: ReLU
 
