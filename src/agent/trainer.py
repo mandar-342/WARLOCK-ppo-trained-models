@@ -8,7 +8,7 @@ import torch
 from loguru import logger
 from sb3_contrib import RecurrentPPO
 from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.vec_env import (DummyVecEnv, SubprocVecEnv,)
+from stable_baselines3.common.vec_env import (DummyVecEnv, SubprocVecEnv,VecNormalize)
 
 from src.agent.callbacks import CallbackFactory
 from src.agent.experiment import ExperimentManager
@@ -71,8 +71,8 @@ class PPOTrainer:
             self._total_timesteps,
         )
 
-        self._train_env = self._build_environment()
-        self._eval_env = self._build_environment()
+        self._train_env = self._build_environment(training=True)
+        self._eval_env = self._build_environment(training=False)
 
         self._callbacks = CallbackFactory(
             experiment=self._experiment,
@@ -82,38 +82,59 @@ class PPOTrainer:
         self._model: RecurrentPPO | None = None
 
     def _build_environment(
-        self,
+        self, training: bool = True,
         
-    ) -> DummyVecEnv:
+    ):
+        
         """
         Builds a monitored vectorized environment.
         """
-
-        def make_env() -> Monitor:
-            env = GymBitcoinEnv()
-            # `PPO(seed=...)` seeds SB3's own RNGs, but not this env's
-            # `np_random` (used for the randomized episode start step) --
-            # that only happens on the *first* `reset()`, which SB3 may
-            # trigger before/without our seed. Seed it explicitly here so
-            # training is reproducible run-to-run.
-            seed_env(env, self._seed)
-            return Monitor(env)
-
-        return DummyVecEnv([make_env])
+        def make_env(rank: int):
+            def _init():
+                env = GymBitcoinEnv()
+                seed_env(env, self._seed + rank)
+                return Monitor(env)
+            return _init
+        
+        if self._n_envs == 1:
+            vec_env = DummyVecEnv(
+            [make_env(0)])
+            
+        else:
+            vec_env = SubprocVecEnv(
+            [make_env(i) for i in range(self._n_envs)]
+        )
+            
+        vec_env = VecNormalize(
+        vec_env,
+        norm_obs=True,
+        norm_reward=True,
+        training=training,
+        )
+        
+        return vec_env
     
     def _policy_kwargs(self) -> dict[str, Any]:
         """
         Returns the PPO policy architecture.
         """
         architecture = self._ppo_cfg["policy_kwargs"]
+        activation_map = {
+        "ReLU": torch.nn.ReLU,
+        "Tanh": torch.nn.Tanh,
+        "ELU": torch.nn.ELU,
+    }
         return {
-            "activation_fn": torch.nn.ReLU,
-             "net_arch": architecture["net_arch"],
-            "lstm_hidden_size": architecture["lstm_hidden_size"],
-            "n_lstm_layers": architecture["n_lstm_layers"],
-            "shared_lstm": architecture["shared_lstm"],
-            "enable_critic_lstm": architecture["enable_critic_lstm"],
-        }
+        "activation_fn": activation_map[
+            architecture["activation_fn"]
+        ],
+        "net_arch": architecture["net_arch"],
+        "ortho_init": architecture["ortho_init"],
+        "lstm_hidden_size": architecture["lstm_hidden_size"],
+        "n_lstm_layers": architecture["n_lstm_layers"],
+        "shared_lstm": architecture["shared_lstm"],
+        "enable_critic_lstm": architecture["enable_critic_lstm"],
+    }
         
     def _remaining_timesteps(self) -> int:
         """
