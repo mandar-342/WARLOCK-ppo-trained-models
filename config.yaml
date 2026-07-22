@@ -124,11 +124,11 @@ training:
 
   device: cuda
 
-  timesteps: 20000
+  timesteps: 100000
 
-  checkpoint_frequency: 5000
+  checkpoint_frequency: 25000
 
-  evaluation_frequency: 5000
+  evaluation_frequency: 25000
 
   log_interval: 10
 
@@ -145,45 +145,31 @@ training:
   resume_experiment:
 
 ppo:
+  policy: MlpLstmPolicy
 
-  policy: MlpPolicy
+  learning_rate: 3.0e-4
+  n_steps: 256
+  batch_size: 64
+  n_epochs: 10
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  ent_coef: 0.02
+  vf_coef: 0.5
+  max_grad_norm: 0.5
 
   policy_kwargs:
     net_arch:
-        pi: [256, 128,64]
-        vf: [256, 128,64]
+      pi: [256, 128, 64]
+      vf: [256, 128, 64]
 
-  activation_fn: ReLU
+    activation_fn: ReLU
+    ortho_init: true
 
-  ortho_init: true
-
-  lstm_hidden_size: 256
-
-  n_lstm_layers: 1
-
-  shared_lstm: false
-
-  enable_critic_lstm: true
-
-  learning_rate: 3.0e-4
-
-  n_steps: 4096
-
-  batch_size: 64
-
-  n_epochs: 10
-
-  gamma: 0.99
-
-  gae_lambda: 0.95
-
-  clip_range: 0.2
-
-  ent_coef: 0.02
-
-  vf_coef: 0.5
-
-  max_grad_norm: 0.5
+    lstm_hidden_size: 256
+    n_lstm_layers: 1
+    shared_lstm: false
+    enable_critic_lstm: true
 
 evaluation:
 
