@@ -1,0 +1,65 @@
+2026-07-22 23:39:43|INFO|GymBitcoinEnv integration test run starting
+2026-07-22 23:39:43|INFO| RUNNING test_env_creation_and_spaces 
+2026-07-22 23:39:43|INFO|Observation Features: ['log_return', 'log_return_6h', 'RSI', 'EMA_ratio', 'ADX', 'ATR_pct', 'volatility_ratio', 'close_location', 'distance_from_high_24h', 'distance_from_low_24h', 'body_pct', 'volume_zscore', 'OBV_zscore', 'rolling_sharpe', 'up_streak', 'wick_anomaly_flag']
+2026-07-22 23:39:43|INFO|GymBitcoinEnv initialized (single-timestep / recurrent-policy obs): data=C:\Jay\Jay\AI Projects\iitisoc\WARLOCK-ppo-trained-models-lstm\data\features\train.parquet, episode_start_warmup=48, features=16, obs_dim=20, max_steps=38611, assets=['BTC/USDT']
+2026-07-22 23:39:43|INFO|Observation space: Box(-inf, inf, (20,), float32)
+2026-07-22 23:39:43|INFO|Action space: Box(-1.0, 1.0, (1,), float32)
+2026-07-22 23:39:43|INFO|Max steps: 38611, features: 16
+2026-07-22 23:39:43|SUCCESS| PASSED test_env_creation_and_spaces 
+
+2026-07-22 23:39:43|INFO| RUNNING test_reset_contract 
+2026-07-22 23:39:43|INFO|Observation Features: ['log_return', 'log_return_6h', 'RSI', 'EMA_ratio', 'ADX', 'ATR_pct', 'volatility_ratio', 'close_location', 'distance_from_high_24h', 'distance_from_low_24h', 'body_pct', 'volume_zscore', 'OBV_zscore', 'rolling_sharpe', 'up_streak', 'wick_anomaly_flag']
+2026-07-22 23:39:43|INFO|GymBitcoinEnv initialized (single-timestep / recurrent-policy obs): data=C:\Jay\Jay\AI Projects\iitisoc\WARLOCK-ppo-trained-models-lstm\data\features\train.parquet, episode_start_warmup=48, features=16, obs_dim=20, max_steps=38611, assets=['BTC/USDT']
+2026-07-22 23:39:43|INFO|Reset obs shape: (20,) (expected (20,))
+2026-07-22 23:39:43|INFO|Reset info: {'step': np.int64(1766), 'price': 10764.1904296875, 'weights': [0.0], 'capital': 10000.0}
+2026-07-22 23:39:43|SUCCESS| PASSED test_reset_contract 
+
+2026-07-22 23:39:43|INFO| RUNNING test_full_allocation_buys_btc 
+2026-07-22 23:39:43|INFO|Observation Features: ['log_return', 'log_return_6h', 'RSI', 'EMA_ratio', 'ADX', 'ATR_pct', 'volatility_ratio', 'close_location', 'distance_from_high_24h', 'distance_from_low_24h', 'body_pct', 'volume_zscore', 'OBV_zscore', 'rolling_sharpe', 'up_streak', 'wick_anomaly_flag']
+2026-07-22 23:39:43|INFO|GymBitcoinEnv initialized (single-timestep / recurrent-policy obs): data=C:\Jay\Jay\AI Projects\iitisoc\WARLOCK-ppo-trained-models-lstm\data\features\train.parquet, episode_start_warmup=48, features=16, obs_dim=20, max_steps=38611, assets=['BTC/USDT']
+2026-07-22 23:39:43|INFO|After action=1.0: weights=[np.float64(0.1999400279886048)] cash=7999.0000 capital=9998.0005 cost=1.9995 reward=-0.022012
+2026-07-22 23:39:43|SUCCESS| PASSED test_full_allocation_buys_btc 
+
+2026-07-22 23:39:43|INFO| RUNNING test_full_episode_random_policy 
+2026-07-22 23:39:43|INFO|Observation Features: ['log_return', 'log_return_6h', 'RSI', 'EMA_ratio', 'ADX', 'ATR_pct', 'volatility_ratio', 'close_location', 'distance_from_high_24h', 'distance_from_low_24h', 'body_pct', 'volume_zscore', 'OBV_zscore', 'rolling_sharpe', 'up_streak', 'wick_anomaly_flag']
+2026-07-22 23:39:43|INFO|GymBitcoinEnv initialized (single-timestep / recurrent-policy obs): data=C:\Jay\Jay\AI Projects\iitisoc\WARLOCK-ppo-trained-models-lstm\data\features\train.parquet, episode_start_warmup=48, features=16, obs_dim=20, max_steps=38611, assets=['BTC/USDT']
+2026-07-22 23:39:43|INFO|ATR Take Profit Triggered | Entry=23410.54 | Current=22932.21
+2026-07-22 23:39:43|INFO|ATR Stop Loss Triggered | Entry=22818.37 | Current=22451.24
+2026-07-22 23:39:43|INFO|ATR Take Profit Triggered | Entry=22511.22 | Current=23175.32
+2026-07-22 23:39:43|INFO|Ran 50 steps, total_reward=-1.0304, final capital=9904.1559, final drawdown=0.0147
+2026-07-22 23:39:43|INFO|Portfolio metrics after episode: {'total_return': np.float64(-0.009421764508532722), 'annualized_return': np.float64(-0.8159165095693452), 'annualized_volatility': 0.12268659969819821, 'sharpe_ratio': -13.731484585972586, 'max_drawdown': 0.016366878319078668, 'current_drawdown': 0.014684685405405726, 'n_trades': 59, 'total_fees_paid': np.float64(43.31854096325258), 'total_slippage_cost': np.float64(46.17727110971571), 'total_realized_pnl': np.float64(-65.92550049339677), 'win_rate': 0.25, 'avg_exposure': 0.20657877997059426}
+2026-07-22 23:39:43|SUCCESS| PASSED test_full_episode_random_policy 
+
+2026-07-22 23:39:43|INFO| RUNNING test_action_clipping 
+2026-07-22 23:39:43|INFO|Observation Features: ['log_return', 'log_return_6h', 'RSI', 'EMA_ratio', 'ADX', 'ATR_pct', 'volatility_ratio', 'close_location', 'distance_from_high_24h', 'distance_from_low_24h', 'body_pct', 'volume_zscore', 'OBV_zscore', 'rolling_sharpe', 'up_streak', 'wick_anomaly_flag']
+2026-07-22 23:39:43|INFO|GymBitcoinEnv initialized (single-timestep / recurrent-policy obs): data=C:\Jay\Jay\AI Projects\iitisoc\WARLOCK-ppo-trained-models-lstm\data\features\train.parquet, episode_start_warmup=48, features=16, obs_dim=20, max_steps=38611, assets=['BTC/USDT']
+2026-07-22 23:39:43|INFO|Out-of-range action clipped correctly: weights=[np.float64(0.19994002798860483)]
+2026-07-22 23:39:43|SUCCESS| PASSED test_action_clipping 
+
+2026-07-22 23:39:43|INFO| RUNNING test_negative_action_opens_futures_short 
+2026-07-22 23:39:43|INFO|Observation Features: ['log_return', 'log_return_6h', 'RSI', 'EMA_ratio', 'ADX', 'ATR_pct', 'volatility_ratio', 'close_location', 'distance_from_high_24h', 'distance_from_low_24h', 'body_pct', 'volume_zscore', 'OBV_zscore', 'rolling_sharpe', 'up_streak', 'wick_anomaly_flag']
+2026-07-22 23:39:43|INFO|GymBitcoinEnv initialized (single-timestep / recurrent-policy obs): data=C:\Jay\Jay\AI Projects\iitisoc\WARLOCK-ppo-trained-models-lstm\data\features\train.parquet, episode_start_warmup=48, features=16, obs_dim=20, max_steps=38611, assets=['BTC/USDT']
+2026-07-22 23:39:43|SUCCESS| PASSED test_negative_action_opens_futures_short 
+
+2026-07-22 23:39:43|INFO| RUNNING test_max_trade_step_rate_limit 
+2026-07-22 23:39:43|INFO|Observation Features: ['log_return', 'log_return_6h', 'RSI', 'EMA_ratio', 'ADX', 'ATR_pct', 'volatility_ratio', 'close_location', 'distance_from_high_24h', 'distance_from_low_24h', 'body_pct', 'volume_zscore', 'OBV_zscore', 'rolling_sharpe', 'up_streak', 'wick_anomaly_flag']
+2026-07-22 23:39:44|INFO|GymBitcoinEnv initialized (single-timestep / recurrent-policy obs): data=C:\Jay\Jay\AI Projects\iitisoc\WARLOCK-ppo-trained-models-lstm\data\features\train.parquet, episode_start_warmup=48, features=16, obs_dim=20, max_steps=38611, assets=['BTC/USDT']
+2026-07-22 23:39:44|INFO|Weight after target=1.0: 0.1999, after target=0.0: 0.1997
+2026-07-22 23:39:44|SUCCESS| PASSED test_max_trade_step_rate_limit 
+
+2026-07-22 23:39:44|INFO| RUNNING test_reset_clears_portfolio_state 
+2026-07-22 23:39:44|INFO|Observation Features: ['log_return', 'log_return_6h', 'RSI', 'EMA_ratio', 'ADX', 'ATR_pct', 'volatility_ratio', 'close_location', 'distance_from_high_24h', 'distance_from_low_24h', 'body_pct', 'volume_zscore', 'OBV_zscore', 'rolling_sharpe', 'up_streak', 'wick_anomaly_flag']
+2026-07-22 23:39:44|INFO|GymBitcoinEnv initialized (single-timestep / recurrent-policy obs): data=C:\Jay\Jay\AI Projects\iitisoc\WARLOCK-ppo-trained-models-lstm\data\features\train.parquet, episode_start_warmup=48, features=16, obs_dim=20, max_steps=38611, assets=['BTC/USDT']
+2026-07-22 23:39:44|INFO|Reset correctly clears portfolio trade history and cash
+2026-07-22 23:39:44|SUCCESS| PASSED test_reset_clears_portfolio_state 
+
+2026-07-22 23:39:44|INFO|SUMMARY
+2026-07-22 23:39:44|INFO|  [PASS] test_env_creation_and_spaces
+2026-07-22 23:39:44|INFO|  [PASS] test_reset_contract
+2026-07-22 23:39:44|INFO|  [PASS] test_full_allocation_buys_btc
+2026-07-22 23:39:44|INFO|  [PASS] test_full_episode_random_policy
+2026-07-22 23:39:44|INFO|  [PASS] test_action_clipping
+2026-07-22 23:39:44|INFO|  [PASS] test_negative_action_opens_futures_short
+2026-07-22 23:39:44|INFO|  [PASS] test_max_trade_step_rate_limit
+2026-07-22 23:39:44|INFO|  [PASS] test_reset_clears_portfolio_state
+2026-07-22 23:39:44|SUCCESS|ALL TESTS PASSED (8/8)
