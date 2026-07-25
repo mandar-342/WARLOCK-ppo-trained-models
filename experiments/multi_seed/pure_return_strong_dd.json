@@ -1,0 +1,59 @@
+{
+    "breaker_rate": 1.0,
+    "group_name": "pure_return_strong_dd",
+    "overrides": {
+        "env.max_drawdown": 0.5,
+        "ppo.ent_coef": 0.02,
+        "ppo.learning_rate": 0.0001,
+        "ppo.n_steps": 512,
+        "reward.drawdown_penalty_scale": 1.5,
+        "reward.overtrade_penalty_scale": 0.03,
+        "reward.sharpe_weight": 0.0
+    },
+    "per_seed": [
+        {
+            "annualized_return": -0.6453258911134269,
+            "annualized_volatility": 0.17772800523864724,
+            "average_drawdown": 0.2516646583538494,
+            "average_loss": 15.18262927247396,
+            "average_win": 16.91353563088425,
+            "breaker_hit": true,
+            "cagr": -0.6453258911134269,
+            "calmar_ratio": -1.288666169688651,
+            "expectancy": -2.1022465555050136,
+            "experiment_dir": "C:\\Jay\\Jay\\AI Projects\\iitisoc\\WARLOCK-ppo-trained-models-lstm\\experiments\\ppo_baseline\\20260723_112300_pid1780_675c6a",
+            "final_capital": 5024.319531859255,
+            "longest_drawdown": 3980,
+            "max_drawdown": 0.5007704138530626,
+            "minimum_capital": 5024.319531859255,
+            "number_of_closing_trades": 1141,
+            "number_of_trades": 2965,
+            "peak_capital": 10064.146178989593,
+            "profit_factor": 0.7662909067473925,
+            "seed": 0,
+            "sharpe_ratio": -5.7432050508758765,
+            "sortino_ratio": -0.09689700748811753,
+            "total_return": -0.4975680468140745,
+            "win_rate": 0.4075372480280456
+        }
+    ],
+    "pruned": false,
+    "seeds": [
+        0
+    ],
+    "sharpe_ratio": {
+        "max": -5.7432050508758765,
+        "mean": -5.7432050508758765,
+        "median": -5.7432050508758765,
+        "min": -5.7432050508758765,
+        "std": 0.0
+    },
+    "timesteps": 100000,
+    "total_return": {
+        "max": -0.4975680468140745,
+        "mean": -0.4975680468140745,
+        "median": -0.4975680468140745,
+        "min": -0.4975680468140745,
+        "std": 0.0
+    }
+}

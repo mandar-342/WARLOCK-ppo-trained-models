@@ -1,0 +1,55 @@
+{
+    "breaker_rate": 1.0,
+    "group_name": "simple_reward",
+    "overrides": {
+        "env.max_drawdown": 0.4,
+        "reward.drawdown_penalty_scale": 0.5,
+        "reward.sharpe_weight": 0.0
+    },
+    "per_seed": [
+        {
+            "annualized_return": -0.7135021322476625,
+            "annualized_volatility": 0.3440999289549453,
+            "average_drawdown": 0.18680163328600197,
+            "average_loss": 85.30639546226757,
+            "average_win": 109.4119261209869,
+            "breaker_hit": true,
+            "cagr": -0.7135021322476625,
+            "calmar_ratio": -1.7367369707701708,
+            "expectancy": -18.122880997869828,
+            "experiment_dir": "C:\\Jay\\Jay\\AI Projects\\iitisoc\\WARLOCK-ppo-trained-models-lstm\\experiments\\ppo_baseline\\20260723_090500_pid7244_21c44a",
+            "final_capital": 6189.649682962346,
+            "longest_drawdown": 1892,
+            "max_drawdown": 0.4108291262615627,
+            "minimum_capital": 6189.649682962346,
+            "number_of_closing_trades": 171,
+            "number_of_trades": 903,
+            "peak_capital": 10505.695306503294,
+            "profit_factor": 0.6756426565756553,
+            "seed": 0,
+            "sharpe_ratio": -3.4599682995645527,
+            "sortino_ratio": -0.05329321664752897,
+            "total_return": -0.38091124489171213,
+            "win_rate": 0.34502923976608185
+        }
+    ],
+    "pruned": false,
+    "seeds": [
+        0
+    ],
+    "sharpe_ratio": {
+        "max": -3.4599682995645527,
+        "mean": -3.4599682995645527,
+        "median": -3.4599682995645527,
+        "min": -3.4599682995645527,
+        "std": 0.0
+    },
+    "timesteps": 100000,
+    "total_return": {
+        "max": -0.38091124489171213,
+        "mean": -0.38091124489171213,
+        "median": -0.38091124489171213,
+        "min": -0.38091124489171213,
+        "std": 0.0
+    }
+}

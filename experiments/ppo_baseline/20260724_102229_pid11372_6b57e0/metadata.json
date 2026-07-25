@@ -1,0 +1,36 @@
+{
+    "algorithm": "PPO",
+    "best_model_path": "C:\\Jay\\Jay\\AI Projects\\iitisoc\\WARLOCK-ppo-trained-models-lstm\\experiments\\ppo_baseline\\20260724_102229_pid11372_6b57e0\\best_model.zip",
+    "completed": true,
+    "device": "cuda",
+    "experiment_name": "ppo_baseline",
+    "git_commit": "unknown",
+    "model_path": "C:\\Jay\\Jay\\AI Projects\\iitisoc\\WARLOCK-ppo-trained-models-lstm\\experiments\\ppo_baseline\\20260724_102229_pid11372_6b57e0\\model.zip",
+    "n_envs": 1,
+    "platform": "Windows-11-10.0.26200-SP0",
+    "policy": "MlpLstmPolicy",
+    "policy_kwargs": {
+        "activation_fn": "ReLU",
+        "enable_critic_lstm": true,
+        "lstm_hidden_size": 256,
+        "n_lstm_layers": 1,
+        "net_arch": {
+            "pi": [
+                256,
+                128,
+                64
+            ],
+            "vf": [
+                256,
+                128,
+                64
+            ]
+        },
+        "ortho_init": true,
+        "shared_lstm": false
+    },
+    "python_version": "3.13.5 (tags/v3.13.5:6cb20a2, Jun 11 2025, 16:15:46) [MSC v.1943 64 bit (AMD64)]",
+    "seed": 2,
+    "timestamp": "2026-07-24T10:22:29.052536+00:00",
+    "total_timesteps": 50000
+}
