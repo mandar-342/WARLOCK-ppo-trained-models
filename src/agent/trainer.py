@@ -12,8 +12,13 @@ from stable_baselines3.common.vec_env import (DummyVecEnv, SubprocVecEnv,VecNorm
 
 from src.agent.callbacks import CallbackFactory
 from src.agent.experiment import ExperimentManager
+from src.agent.features_extractor import MultiAssetFeaturesExtractor
 from src.env.gym_bitcoin import GymBitcoinEnv
 from src.utils import config, set_global_seed, seed_env
+
+FEATURES_EXTRACTOR_REGISTRY = {
+    "MultiAssetFeaturesExtractor": MultiAssetFeaturesExtractor,
+}
 
 
 class PPOTrainer:
@@ -124,7 +129,7 @@ class PPOTrainer:
         "Tanh": torch.nn.Tanh,
         "ELU": torch.nn.ELU,
     }
-        return {
+        kwargs = {
         "activation_fn": activation_map[
             architecture["activation_fn"]
         ],
@@ -135,6 +140,24 @@ class PPOTrainer:
         "shared_lstm": architecture["shared_lstm"],
         "enable_critic_lstm": architecture["enable_critic_lstm"],
     }
+
+        # Multi-asset run: the env emits a Dict obs, so a custom
+        # features_extractor (shared per-asset encoder, see
+        # src/agent/features_extractor.py) must be resolved from its
+        # config string name and passed through to SB3/sb3-contrib.
+        extractor_name = architecture.get("features_extractor")
+        if extractor_name:
+            if extractor_name not in FEATURES_EXTRACTOR_REGISTRY:
+                raise ValueError(
+                    f"Unknown ppo.policy_kwargs.features_extractor '{extractor_name}'. "
+                    f"Known: {list(FEATURES_EXTRACTOR_REGISTRY)}"
+                )
+            kwargs["features_extractor_class"] = FEATURES_EXTRACTOR_REGISTRY[extractor_name]
+            kwargs["features_extractor_kwargs"] = architecture.get(
+                "features_extractor_kwargs", {}
+            )
+
+        return kwargs
         
     def _remaining_timesteps(self) -> int:
         """

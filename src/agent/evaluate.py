@@ -11,6 +11,7 @@ from src.analytics.metrics import MetricsCalculator
 from src.analytics.plots import PlotGenerator
 from src.analytics.report import ReportGenerator
 from src.env.gym_bitcoin import GymBitcoinEnv
+from src.portfolio.utils import base_asset
 from src.utils import config, root, set_global_seed, seed_env
 
 
@@ -152,17 +153,22 @@ class Evaluator:
                 self._environment.step(action)
             )
             episode_start = bool(terminated or truncated)
-            self._action_history.append(
-       {
-        "step": int(info["step"]),
-        "raw_action": float(info["raw_action"][0]),
-        "target_weight": float(info["target_weights"][0]),
-        "position_weight": float(info["position_sized_weights"][0]),
-        "risk_multiplier": float(info["risk_multiplier"]),
-        "forced_exit": bool(info["forced_exit"]),
-        "exit_reason": info["exit_reason"],
-        }
-            )
+            # Per-asset columns (raw_action_BTC, raw_action_ETH, ...)
+            # driven off the portfolio's symbol order, rather than the
+            # old `[0]`-only indexing that silently dropped every asset
+            # past the first from action_diagnostics.csv.
+            tags = [base_asset(s) for s in self._environment.portfolio.symbols]
+            action_record = {
+                "step": int(info["step"]),
+                "forced_exit": bool(info["forced_exit"]),
+                "exit_reason": info["exit_reason"],
+            }
+            for i, tag in enumerate(tags):
+                action_record[f"raw_action_{tag}"] = float(info["raw_action"][i])
+                action_record[f"target_weight_{tag}"] = float(info["target_weights"][i])
+                action_record[f"position_weight_{tag}"] = float(info["position_sized_weights"][i])
+                action_record[f"risk_multiplier_{tag}"] = float(info["risk_multiplier"][i])
+            self._action_history.append(action_record)
             reward_components = info["reward_components"]
             
             self._reward_history.append(
@@ -182,10 +188,13 @@ class Evaluator:
                 int(info["step"])
             )
 
+            price_record = {
+                f"price_{tag}": float(info["prices"][i]) for i, tag in enumerate(tags)
+            }
             self._portfolio_history.append(
                 {
                     "step": int(info["step"]),
-                    "price": float(info["price"]),
+                    **price_record,
                     "capital": float(info["capital"]),
                     "cash": float(info["cash"]),
                     "drawdown": float(info["drawdown"]),
@@ -212,7 +221,7 @@ class Evaluator:
                 self._trade_history.append(
                     {
                         "step": int(info["step"]),
-                        "price": float(info["price"]),
+                        **price_record,
                         "realized_pnl": realized,
                         "cumulative_realized_pnl": cumulative_realized,
                         "forced_exit": bool(info["forced_exit"]),

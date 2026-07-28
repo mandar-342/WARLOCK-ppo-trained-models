@@ -8,6 +8,7 @@ from loguru import logger
 from src.env.rewards import RewardCalculator
 from src.env.utils import PositionSizer
 from src.portfolio import Portfolio
+from src.portfolio.utils import base_asset
 from src.utils import config, root
 
 class GymBitcoinEnv(gym.Env):
@@ -80,10 +81,24 @@ class GymBitcoinEnv(gym.Env):
         #
         # portfolio vector: [cash_weight, *asset_weights, unrealized_pnl_pct, holding_time_norm]
         # = 1 (cash) + n_assets (weights) + 1 (unrealized pnl) + 1 (holding time)
-        portfolio_vec_dim = 3 + self.n_assets
-        obs_dim = self.n_features + portfolio_vec_dim
-        self.observation_space = spaces.Box(
-            low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32
+        self.portfolio_vec_dim = 3 + self.n_assets
+        # Market block is stacked per-asset: (n_assets, n_features), NOT
+        # flattened. A Dict space is used (rather than SB3's default
+        # flatten-everything Box) so a custom features extractor can
+        # apply a shared per-asset encoder to the "market" block before
+        # concatenating with the flat "portfolio" vector -- see the
+        # multi-asset features extractor wired in via policy_kwargs.
+        self.observation_space = spaces.Dict(
+            {
+                "market": spaces.Box(
+                    low=-np.inf, high=np.inf,
+                    shape=(self.n_assets, self.n_features), dtype=np.float32,
+                ),
+                "portfolio": spaces.Box(
+                    low=-np.inf, high=np.inf,
+                    shape=(self.portfolio_vec_dim,), dtype=np.float32,
+                ),
+            }
         )
         # Target *delta* per asset, in [-1, 1], applied to the current net
         # weight each step (see step()). Net weight itself can now range
@@ -115,11 +130,14 @@ class GymBitcoinEnv(gym.Env):
             overtrade_scale=reward_cfg.get("overtrade_penalty_scale", 0.01),
             sharpe_aggregation_steps=reward_cfg.get("sharpe_aggregation_steps", 1),
         )
-        #  Trade State
-        self.position_open = False
-        self.entry_price = 0.0
-        self.entry_atr = 0.0
-        self.entry_weight = 0.0
+        #  Trade State -- one entry per asset so BTC and ETH can each hold
+        # an independent position with its own stop-loss/take-profit,
+        # rather than a single scalar that (pre-multiasset) only ever
+        # tracked asset 0 and silently ignored every other asset.
+        self.position_open = [False] * self.n_assets
+        self.entry_price = [0.0] * self.n_assets
+        self.entry_atr = [0.0] * self.n_assets
+        self.entry_weight = [0.0] * self.n_assets
         self.stop_loss_multiple=config.get("risk", {}).get("stop_loss_atr_multiple", 1.5)
         self.take_profit_multiple= config.get("risk", {}).get("take_profit_atr_multiple", 3.0)
         self.target_atr_pct=config.get("risk", {}).get("target_atr_pct", 1.0)
@@ -127,32 +145,57 @@ class GymBitcoinEnv(gym.Env):
         logger.info(
             f"GymBitcoinEnv initialized (single-timestep / recurrent-policy obs): "
             f"data={self.data_path}, episode_start_warmup={self.window_len}, "
-            f"features={self.n_features}, obs_dim={obs_dim}, "
+            f"features={self.n_features}, market_shape=({self.n_assets},{self.n_features}), "
             f"max_steps={self.max_steps}, assets={self.portfolio.symbols}"
         )
 
     def load_data(self) -> None:
         df = pd.read_parquet(self.data_path)
 
-        #Identify feature columns (exclude OHLCV + timestamp)
+        # Multi-asset feature files are asset-prefixed (e.g. "BTC_RSI",
+        # "ETH_RSI") and share one "timestamp" + "{TAG}_close" per asset,
+        # produced by src.features.pipeline.generate_multiasset_features.
+        # Column order/asset order is driven by self.portfolio.symbols so
+        # the env's asset axis always lines up with the portfolio's.
         selected = config["features"]["selected_features"]
+        tags = [base_asset(s) for s in self.portfolio.symbols]
 
-        self.feature_cols = [
-    c for c in selected
-    if c in df.columns
-            ]
-        logger.info(
-    "Observation Features: {}",
-    self.feature_cols,
+        self.feature_cols = [c for c in selected if f"{tags[0]}_{c}" in df.columns]
+        logger.info("Observation Features: {}", self.feature_cols)
+        if not self.feature_cols:
+            raise ValueError(
+                "No configured features found with expected asset prefix "
+                f"'{tags[0]}_' in {self.data_path}. Was this file produced "
+                "by generate_multiasset_features()?"
             )
 
-        self.features = df[self.feature_cols].values.astype(np.float32)
-        self.prices = df["close"].values.astype(np.float32)
-        self.timestamps = df["timestamp"].values
         self.n_features = len(self.feature_cols)
         if "ATR_pct" not in self.feature_cols:
             raise ValueError("ATR_pct feature is required for risk management.")
         self.atr_feature_idx = self.feature_cols.index("ATR_pct")
+
+        # Stack per-asset feature blocks -> shape (T, n_assets, n_features)
+        # and per-asset close prices -> shape (T, n_assets). Assets were
+        # already inner-joined on a shared timestamp axis upstream, so no
+        # further alignment is needed here.
+        per_asset_features = []
+        per_asset_prices = []
+        for tag in tags:
+            cols = [f"{tag}_{c}" for c in self.feature_cols]
+            missing = [c for c in cols if c not in df.columns]
+            if missing:
+                raise ValueError(f"Missing expected columns for asset '{tag}': {missing}")
+            per_asset_features.append(df[cols].values.astype(np.float32))
+            close_col = f"{tag}_close"
+            if close_col not in df.columns:
+                raise ValueError(f"Missing close-price column '{close_col}' for asset '{tag}'.")
+            per_asset_prices.append(df[close_col].values.astype(np.float32))
+
+        # (T, n_assets, n_features)
+        self.features = np.stack(per_asset_features, axis=1)
+        # (T, n_assets)
+        self.prices = np.stack(per_asset_prices, axis=1)
+        self.timestamps = df["timestamp"].values
 
         #Max steps = data length - window_len - 1 (need at least one step ahead)
         self.max_steps = len(self.features) - self.window_len - 1
@@ -163,14 +206,15 @@ class GymBitcoinEnv(gym.Env):
                 f"need at least {self.window_len + 2}"
             )
 
-    def get_obs(self) -> np.ndarray:
-        # Single timestep of market features. Temporal context is the
+    def get_obs(self) -> dict[str, np.ndarray]:
+        # Single timestep of market features, stacked per-asset:
+        # shape (n_assets, n_features). Temporal context is the
         # recurrent policy's job (via its hidden state across steps),
         # not this method's -- see the observation_space comment in
         # __init__ for why this changed from a flattened window.
         market_step = self.features[self.current_step]
 
-        prices = [self.prices[self.current_step]]
+        prices = list(self.prices[self.current_step])
         net_weights = self.portfolio.current_weights(prices)
         # cash_weight approximates the "uninvested" fraction of equity;
         # long notional is cash-backed 1:1 so this stays meaningful even
@@ -189,7 +233,10 @@ class GymBitcoinEnv(gym.Env):
             [portfolio_vec, np.array([self.holding_time / 100.0], dtype=np.float32)]
         )
 
-        return np.concatenate([market_step, portfolio_vec])
+        return {
+            "market": market_step.astype(np.float32),
+            "portfolio": portfolio_vec.astype(np.float32),
+        }
 
     def reset(self, *, seed: int | None = None, options: dict | None = None):
         super().reset(seed=seed)
@@ -209,18 +256,18 @@ class GymBitcoinEnv(gym.Env):
         self.holding_time = 0
         self.peak_value = self.portfolio.cash
         self.reward_calc.reset()
-        self.position_open = False
-        self.entry_price = 0.0
-        self.entry_atr = 0.0
-        self.entry_weight = 0.0
+        self.position_open = [False] * self.n_assets
+        self.entry_price = [0.0] * self.n_assets
+        self.entry_atr = [0.0] * self.n_assets
+        self.entry_weight = [0.0] * self.n_assets
 
         obs = self.get_obs()
-        price = float(self.prices[self.current_step])
+        prices = list(self.prices[self.current_step])
         info = {
             "step": self.current_step,
-            "price": price,
+            "prices": prices,
             "weights": list(self.current_weights),
-            "capital": self.portfolio.total_value([price]),
+            "capital": self.portfolio.total_value(prices),
         }
         return obs, info
     
@@ -250,14 +297,13 @@ class GymBitcoinEnv(gym.Env):
     Used by passive benchmarks such as Buy & Hold.
         """
 
-        price_prev = float(self.prices[self.current_step])
+        prices_prev = list(self.prices[self.current_step])
 
-        value_before = self.portfolio.total_value([price_prev])
+        value_before = self.portfolio.total_value(prices_prev)
 
         self.current_step += 1
 
-        price = float(self.prices[self.current_step])
-        prices = [price]
+        prices = list(self.prices[self.current_step])
 
         trades = []
 
@@ -301,7 +347,7 @@ class GymBitcoinEnv(gym.Env):
 
         info = {
         "step": self.current_step,
-        "price": price,
+        "prices": prices,
         "weights": list(self.current_weights),
         "cash": self.portfolio.cash,
         "cost": 0.0,
@@ -326,7 +372,7 @@ class GymBitcoinEnv(gym.Env):
     )
 
     def step(self, action: np.ndarray):
-        price_prev = float(self.prices[self.current_step])
+        prices_prev = list(self.prices[self.current_step])
 
         # 1. Clip raw action to the valid delta range, then rate-limit the
         # change in net allocation. target can now be negative (futures
@@ -340,71 +386,89 @@ class GymBitcoinEnv(gym.Env):
     self.position_sizer.apply(current, target)
     for current, target in zip(self.current_weights, target_weights)
        ]
-        # Dynamic ATR Position Sizing.
+        # Dynamic ATR Position Sizing, computed independently per asset.
         # A short's equity risk for a given price move is `leverage`x a
         # long's, so its ATR budget must be divided by leverage before
         # solving for the multiplier -- otherwise the sizer treats a 3x
         # leveraged short as if it carried the same equity risk as an
         # unleveraged long of the same weight magnitude.
-        current_atr = float(self.features[self.current_step, self.atr_feature_idx])
+        current_atr_per_asset = [
+            float(self.features[self.current_step, i, self.atr_feature_idx])
+            for i in range(self.n_assets)
+        ]
         leverage = self.portfolio.leverage
-        risk_multiplier_long = min(1.0, self.target_atr_pct / max(current_atr, 1e-6))
-        risk_multiplier_short = min(1.0, self.target_atr_pct / max(current_atr * leverage, 1e-6))
-        # Kept for logging/back-compat: the multiplier actually applied to
-        # asset 0 (single-asset env today), captured before new_weights is
-        # overwritten below.
-        risk_multiplier = risk_multiplier_short if new_weights[0] < 0 else risk_multiplier_long
+        risk_multiplier_long = [
+            min(1.0, self.target_atr_pct / max(atr, 1e-6)) for atr in current_atr_per_asset
+        ]
+        risk_multiplier_short = [
+            min(1.0, self.target_atr_pct / max(atr * leverage, 1e-6)) for atr in current_atr_per_asset
+        ]
+        # Per-asset multiplier actually applied, for logging/diagnostics
+        # (previously only asset 0's value was captured, silently
+        # dropping every other asset's risk-sizing from the logs).
+        risk_multiplier_applied = [
+            risk_multiplier_short[i] if new_weights[i] < 0 else risk_multiplier_long[i]
+            for i in range(self.n_assets)
+        ]
         new_weights = [
-            weight * (risk_multiplier_short if weight < 0 else risk_multiplier_long)
-            for weight in new_weights
+            weight * (risk_multiplier_short[i] if weight < 0 else risk_multiplier_long[i])
+            for i, weight in enumerate(new_weights)
         ]
 
-        # Capture portfolio value at the *old* price, before this step's
+        # Capture portfolio value at the *old* prices, before this step's
         # trade and before advancing the market cursor. This is the
         # correct denominator for step_return below — valuing pre-trade
-        # holdings at the pre-trade price.
-        value_before = self.portfolio.total_value([price_prev])
+        # holdings at the pre-trade prices.
+        value_before = self.portfolio.total_value(prices_prev)
 
         # 2. Advance market cursor to the next candle.
         self.current_step += 1
-        price = float(self.prices[self.current_step])
-        prices = [price]
-        # ATR Stop Loss
-        
+        prices = list(self.prices[self.current_step])
+        # ATR Stop Loss / Take Profit -- evaluated independently per asset,
+        # so e.g. a BTC stop-loss firing doesn't touch an open ETH
+        # position, and vice versa.
+
         forced_exit = False
         exit_reason = None
-        if self.position_open:
-              unrealized_return = (price - self.entry_price) / self.entry_price
-              if self.entry_weight < 0:
-                  # Short leg: profit is the mirror image of a long's return.
-                  unrealized_return = -unrealized_return
-              # Shorts are margin-backed at `portfolio.short.leverage`, so a
-              # given price move produces `leverage`x the equity impact of
-              # the same move on an unleveraged (1x) long. The ATR-based
-              # stop_loss_pct/take_profit_pct thresholds below are equity-risk
-              # budgets (e.g. "don't lose more than ~1.5*ATR% of equity"), so
-              # we must scale the raw price return by effective leverage
-              # before comparing, or shorts blow through the intended budget
-              # by a factor of `leverage`.
-              effective_leverage = self.portfolio.leverage if self.entry_weight < 0 else 1.0
-              equity_impact = unrealized_return * effective_leverage
-              stop_loss_pct=(self.stop_loss_multiple * self.entry_atr/100.0)
-              take_profit_pct=(self.take_profit_multiple*self.entry_atr/100.0)
-              if equity_impact <= -stop_loss_pct:
-                  logger.info( f"ATR Stop Loss Triggered "
-                               f"| Entry={self.entry_price:.2f} "
-                                f"| Current={price:.2f}")
-                  new_weights = [0.0] * self.n_assets  # Force exit
-                  forced_exit = True
-                  exit_reason = "stop_loss"
-              elif equity_impact >= take_profit_pct:
-                  
-                    logger.info( f"ATR Take Profit Triggered "
-                               f"| Entry={self.entry_price:.2f} "
-                                f"| Current={price:.2f}")
-                    new_weights = [0.0] * self.n_assets  # Force exit
-                    forced_exit = True
-                    exit_reason = "take_profit"
+        per_asset_exit_reason = [None] * self.n_assets
+        for i in range(self.n_assets):
+            if not self.position_open[i]:
+                continue
+            price = prices[i]
+            entry_price = self.entry_price[i]
+            unrealized_return = (price - entry_price) / entry_price
+            if self.entry_weight[i] < 0:
+                # Short leg: profit is the mirror image of a long's return.
+                unrealized_return = -unrealized_return
+            # Shorts are margin-backed at `portfolio.short.leverage`, so a
+            # given price move produces `leverage`x the equity impact of
+            # the same move on an unleveraged (1x) long. The ATR-based
+            # stop_loss_pct/take_profit_pct thresholds below are equity-risk
+            # budgets (e.g. "don't lose more than ~1.5*ATR% of equity"), so
+            # we must scale the raw price return by effective leverage
+            # before comparing, or shorts blow through the intended budget
+            # by a factor of `leverage`.
+            effective_leverage = self.portfolio.leverage if self.entry_weight[i] < 0 else 1.0
+            equity_impact = unrealized_return * effective_leverage
+            stop_loss_pct = (self.stop_loss_multiple * self.entry_atr[i] / 100.0)
+            take_profit_pct = (self.take_profit_multiple * self.entry_atr[i] / 100.0)
+            if equity_impact <= -stop_loss_pct:
+                logger.info(f"ATR Stop Loss Triggered on asset {i} "
+                            f"| Entry={entry_price:.2f} | Current={price:.2f}")
+                new_weights[i] = 0.0  # Force exit this asset only
+                forced_exit = True
+                per_asset_exit_reason[i] = "stop_loss"
+            elif equity_impact >= take_profit_pct:
+                logger.info(f"ATR Take Profit Triggered on asset {i} "
+                            f"| Entry={entry_price:.2f} | Current={price:.2f}")
+                new_weights[i] = 0.0  # Force exit this asset only
+                forced_exit = True
+                per_asset_exit_reason[i] = "take_profit"
+        if forced_exit:
+            # Kept as a single scalar for back-compat with existing
+            # consumers of info["exit_reason"]; per-asset detail is in
+            # info["exit_reason_per_asset"].
+            exit_reason = next(r for r in per_asset_exit_reason if r is not None)
 
         # 3. Execute the rebalance at the new candle's close.
         weight_delta_before = sum(abs(a - b) for a, b in zip(new_weights, self.current_weights))
@@ -413,18 +477,20 @@ class GymBitcoinEnv(gym.Env):
          prices,
                          )
 
-        #Detects a new position opening
-        if(not self.position_open and any(abs(weight)>1e-6 for weight in self.current_weights)):
-            self.position_open = True
-            self.entry_price = price
-            self.entry_atr = float(self.features[self.current_step, self.atr_feature_idx])
-            self.entry_weight = self.current_weights[0]
-        # Detect position fully closed
-        if (self.position_open and all(abs(weight) < 1e-6 for weight in self.current_weights)):
-            self.position_open = False
-            self.entry_price = 0.0
-            self.entry_atr = 0.0
-            self.entry_weight = 0.0
+        # Detect new positions opening / existing ones fully closing,
+        # independently per asset.
+        for i in range(self.n_assets):
+            weight_i = self.current_weights[i]
+            if not self.position_open[i] and abs(weight_i) > 1e-6:
+                self.position_open[i] = True
+                self.entry_price[i] = prices[i]
+                self.entry_atr[i] = float(self.features[self.current_step, i, self.atr_feature_idx])
+                self.entry_weight[i] = weight_i
+            elif self.position_open[i] and abs(weight_i) < 1e-6:
+                self.position_open[i] = False
+                self.entry_price[i] = 0.0
+                self.entry_atr[i] = 0.0
+                self.entry_weight[i] = 0.0
 
         total_value = self.portfolio.total_value(prices)
         cost = sum(t.fee + t.slippage_cost for t in trades)
@@ -458,7 +524,7 @@ class GymBitcoinEnv(gym.Env):
         obs = self.get_obs()
         info = {
             "step": self.current_step,
-            "price": price,
+            "prices": prices,
             "weights": list(self.current_weights),
             "cash": self.portfolio.cash,
             "cost": cost,
@@ -471,11 +537,14 @@ class GymBitcoinEnv(gym.Env):
             "raw_action": action.tolist(),
             "target_weights": target_weights,
             "position_sized_weights": list(new_weights),
-            "risk_multiplier": float(risk_multiplier),
-            "risk_multiplier_long": float(risk_multiplier_long),
-            "risk_multiplier_short": float(risk_multiplier_short),
+            # Per-asset lists (index order == self.portfolio.symbols), so
+            # nothing beyond asset 0 gets silently dropped from logs/CSVs.
+            "risk_multiplier": [float(v) for v in risk_multiplier_applied],
+            "risk_multiplier_long": [float(v) for v in risk_multiplier_long],
+            "risk_multiplier_short": [float(v) for v in risk_multiplier_short],
             "forced_exit": forced_exit,
             "exit_reason": exit_reason,
+            "exit_reason_per_asset": per_asset_exit_reason,
         }
 
         return obs, float(reward), terminated, truncated, info
