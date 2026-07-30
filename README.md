@@ -269,14 +269,3 @@ MIT License — see `LICENSE` for details.
 | Optuna study not saving | Check `storage` URL in `hpo_optuna.py` (defaults to SQLite file) |
 
 ---
-
-## Roadmap / Contributing
-
-- [ ] Multi-exchange data support (Bybit, OKX, etc.)
-- [ ] Additional feature families (order flow, funding basis, on-chain)
-- [ ] Alternative algorithms (SAC, DreamerV3, Decision Transformer)
-- [ ] Walk-forward / purged cross-validation
-- [ ] Live trading adapter (paper → live)
-- [ ] Distributed training (Ray, multi-GPU)
-
-PRs welcome! Open an issue first for discussion.
