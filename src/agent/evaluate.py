@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 from loguru import logger
 from sb3_contrib import RecurrentPPO
+from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 
 from src.analytics.metrics import MetricsCalculator
 from src.analytics.plots import PlotGenerator
@@ -23,6 +24,8 @@ class Evaluator:
     def __init__(
         self,
         experiment_directory: str | Path,
+        model_path: str | Path | None = None,
+        vecnormalize_path: str | Path | None = None,
     ) -> None:
 
         self._experiment_dir = Path(experiment_directory)
@@ -32,12 +35,19 @@ class Evaluator:
                 f"Experiment directory not found: {self._experiment_dir}"
             )
 
-        self._model_path = self._experiment_dir / "model.zip"
-
-        if not self._model_path.exists():
-            raise FileNotFoundError(
-                f"Model not found: {self._model_path}"
-            )
+        if model_path is not None:
+            self._model_path = Path(model_path)
+        else:
+            best_model = self._experiment_dir / "best_model.zip"
+            final_model = self._experiment_dir / "model.zip"
+            if best_model.exists():
+                self._model_path = best_model
+            elif final_model.exists():
+                self._model_path = final_model
+            else:
+                raise FileNotFoundError(
+                    f"No model found in {self._experiment_dir}"
+                )
 
         self._evaluation_cfg = config["evaluation"]
         self._training_cfg = config["training"]
@@ -61,14 +71,45 @@ class Evaluator:
 
         logger.success("Model loaded successfully.")
 
-        test_data = (
-            root("data", "features", "test.parquet")
-)
+        test_data = root("data", "features", "test.parquet")
 
-        self._environment = GymBitcoinEnv(
-    data_path=str(test_data),
-    deterministic_start=True,
-)
+        # Keep a direct handle on the raw (unwrapped) env so we can read
+        # `portfolio.symbols` below -- once wrapped in DummyVecEnv +
+        # VecNormalize this attribute is no longer directly accessible.
+        raw_env = GymBitcoinEnv(
+            data_path=str(test_data),
+            deterministic_start=True,
+        )
+        self._symbols = raw_env.portfolio.symbols
+
+        base_env = DummyVecEnv([lambda: raw_env])
+
+        if vecnormalize_path is not None:
+            vecnormalize_path = Path(vecnormalize_path)
+        else:
+            checkpoint_dir = self._experiment_dir / "checkpoints"
+            vecnormalize_files = sorted(
+                checkpoint_dir.glob("checkpoint_vecnormalize_*_steps.pkl")
+            )
+            if not vecnormalize_files:
+                raise FileNotFoundError(
+                    f"No VecNormalize checkpoint found in {checkpoint_dir}"
+                )
+            vecnormalize_path = vecnormalize_files[-1]
+
+        logger.info(
+            "Loading VecNormalize statistics from {}",
+            vecnormalize_path,
+        )
+
+        self._environment = VecNormalize.load(
+            str(vecnormalize_path),
+            base_env,
+        )
+
+        self._environment.training = False
+        self._environment.norm_reward = False
+
         self._evaluation_dir = (
             self._experiment_dir / "evaluation"
         )
@@ -105,7 +146,7 @@ class Evaluator:
         logger.info(
             "Evaluation initialized."
         )
-        
+
     def _run_episode(self) -> None:
         """
         Runs one deterministic evaluation episode and records
@@ -128,17 +169,21 @@ class Evaluator:
         self._prev_realized_pnl = 0.0
 
         # `deterministic_start=True` already removes the only source of
-        # randomness in this env (see gym_bitcoin.py), but we pass an
-        # explicit seed too as defense-in-depth in case a stochastic
-        # element (e.g. slippage noise) is ever added later.
-        observation, _ = self._environment.reset(
-            seed=self._evaluation_cfg.get("seed", 42)
-        )
+        # randomness in this env (see gym_bitcoin.py). Seeding is handled
+        # globally via `set_global_seed` above; the vec env's `reset()`
+        # takes no seed argument.
+        observation = self._environment.reset()
         lstm_state = None
         episode_start = True
 
         terminated = False
         truncated = False
+
+        # Per-asset column tags (raw_action_BTC, raw_action_ETH, ...)
+        # driven off the portfolio's symbol order, rather than
+        # `[0]`-only indexing that would silently drop every asset past
+        # the first from action_diagnostics.csv.
+        tags = [base_asset(s) for s in self._symbols]
 
         while not (terminated or truncated):
 
@@ -149,15 +194,16 @@ class Evaluator:
                 deterministic=self._evaluation_cfg["deterministic"],
             )
 
-            observation, reward, terminated, truncated, info = (
+            observation, reward, done, info = (
                 self._environment.step(action)
             )
+
+            terminated = bool(done[0])
+            truncated = False
+            info = info[0]
+            reward = float(reward[0])
             episode_start = bool(terminated or truncated)
-            # Per-asset columns (raw_action_BTC, raw_action_ETH, ...)
-            # driven off the portfolio's symbol order, rather than the
-            # old `[0]`-only indexing that silently dropped every asset
-            # past the first from action_diagnostics.csv.
-            tags = [base_asset(s) for s in self._environment.portfolio.symbols]
+
             action_record = {
                 "step": int(info["step"]),
                 "forced_exit": bool(info["forced_exit"]),
@@ -169,8 +215,9 @@ class Evaluator:
                 action_record[f"position_weight_{tag}"] = float(info["position_sized_weights"][i])
                 action_record[f"risk_multiplier_{tag}"] = float(info["risk_multiplier"][i])
             self._action_history.append(action_record)
+
             reward_components = info["reward_components"]
-            
+
             self._reward_history.append(
                 {
                     "step_return": float(reward_components["step_return"]),
@@ -272,37 +319,38 @@ class Evaluator:
                 index=False,
             )
         pd.DataFrame(
-    self._reward_history,
-            ).to_csv(
-    self._evaluation_dir / "reward_components.csv",
-    index=False,
-           )
+            self._reward_history,
+        ).to_csv(
+            self._evaluation_dir / "reward_components.csv",
+            index=False,
+        )
         pd.DataFrame(
-    self._action_history,
-).to_csv(
-    self._evaluation_dir / "action_diagnostics.csv",
-    index=False,
-)
+            self._action_history,
+        ).to_csv(
+            self._evaluation_dir / "action_diagnostics.csv",
+            index=False,
+        )
 
         logger.success(
             "Evaluation CSV files saved."
         )
-        
-        
-    def _generate_analytics(self) -> None:
+
+    def _generate_analytics(self) -> dict:
         """
         Generate metrics, plots and PDF report.
         """
 
         logger.info("Generating evaluation analytics.")
 
-        metrics = MetricsCalculator(
+        calculator = MetricsCalculator(
             equity_curve=pd.Series(self._equity_curve),
             trade_returns=pd.Series(self._trade_returns),
             risk_free_rate=self._evaluation_cfg["risk_free_rate"],
         )
 
-        metrics.save_json(
+        metrics = calculator.to_dict()
+
+        calculator.save_json(
             self._evaluation_dir / "metrics.json",
         )
 
@@ -324,28 +372,28 @@ class Evaluator:
                 evaluation_directory=self._evaluation_dir,
                 plots_directory=self._plots_dir,
             ).generate()
-            
+
         reward_df = pd.DataFrame(self._reward_history)
         logger.info("-" * 80)
         logger.info("Reward Diagnostics")
         for column in reward_df.columns:
             logger.info(
-        "{} | mean={:.6f} std={:.6f} min={:.6f} max={:.6f}",
-        column,
-        reward_df[column].mean(),
-        reward_df[column].std(),
-        reward_df[column].min(),
-        reward_df[column].max(),
-    )
+                "{} | mean={:.6f} std={:.6f} min={:.6f} max={:.6f}",
+                column,
+                reward_df[column].mean(),
+                reward_df[column].std(),
+                reward_df[column].min(),
+                reward_df[column].max(),
+            )
         logger.info("-" * 80)
-
-
 
         logger.success(
             "Analytics generated successfully."
         )
 
-    def evaluate(self) -> None:
+        return metrics
+
+    def evaluate(self) -> dict:
         """
         Execute the complete evaluation pipeline.
         """
@@ -358,11 +406,13 @@ class Evaluator:
 
         self._save_csv_outputs()
 
-        self._generate_analytics()
+        metrics = self._generate_analytics()
 
         logger.success(
             "Evaluation completed successfully."
         )
+
+        return metrics
 
 
 def main() -> int:
@@ -377,11 +427,25 @@ def main() -> int:
         type=Path,
         help="Path to experiment directory.",
     )
+    parser.add_argument(
+        "--model",
+        type=Path,
+        default=None,
+        help="Explicit path to a model .zip (defaults to best_model.zip, then model.zip).",
+    )
+    parser.add_argument(
+        "--vecnormalize",
+        type=Path,
+        default=None,
+        help="Explicit path to a VecNormalize .pkl (defaults to latest checkpoint).",
+    )
 
     args = parser.parse_args()
 
     evaluator = Evaluator(
         experiment_directory=args.experiment,
+        model_path=args.model,
+        vecnormalize_path=args.vecnormalize,
     )
 
     evaluator.evaluate()
