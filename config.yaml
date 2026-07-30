@@ -150,8 +150,8 @@ ppo:
   policy: MlpLstmPolicy
 
   learning_rate: 1e-4
-  n_steps: 256
-  batch_size: 32
+  n_steps: 512
+  batch_size: 64
   n_epochs: 10
   gamma: 0.9516
   gae_lambda: 0.9380
