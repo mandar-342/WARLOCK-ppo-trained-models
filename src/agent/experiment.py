@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 import platform
 import shutil
 import subprocess
 import sys
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -36,10 +38,18 @@ class ExperimentManager:
         self._started_at = datetime.now(timezone.utc)
         self._timestamp = self._started_at.strftime("%Y%m%d_%H%M%S")
         if run_directory is None:
+            # Timestamp alone is only second-resolution, so two runs
+            # (e.g. concurrent Optuna worker processes, or fast-starting
+            # multi-seed jobs) started in the same second would otherwise
+            # collide on this directory name and clobber each other's
+            # checkpoints/logs. Appending the PID and a short random
+            # suffix makes it collision-safe across concurrent processes
+            # while keeping the directory sortable-by-start-time.
+            run_id = f"{self._timestamp}_pid{os.getpid()}_{uuid.uuid4().hex[:6]}"
             self._run_directory = root(
                 "experiments",
                 experiment_name,
-                self._timestamp,
+                run_id,
             )
         else:
             self._run_directory = Path(run_directory)
@@ -180,12 +190,21 @@ class ExperimentManager:
         """
         Builds experiment metadata.
         """
+        training_cfg = config.get("training", {})
+        ppo_cfg = config.get("ppo", {})
+        
         return {
             "experiment_name": self._experiment_name,
             "timestamp": self._started_at.isoformat(),
             "git_commit": self._git_commit(),
             "python_version": sys.version,
             "platform": platform.platform(),
+            "algorithm": "PPO",
+            "policy": ppo_cfg.get("policy"),
+            "device": training_cfg.get("device"),
+             "seed": training_cfg.get("seed"),
+            "n_envs": training_cfg.get("n_envs", 1),
+            "policy_kwargs": ppo_cfg.get("policy_kwargs", {}),
         }
         
         

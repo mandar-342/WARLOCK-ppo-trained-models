@@ -54,17 +54,32 @@ class GymBitcoinEnv(gym.Env):
         self.load_data()
 
         # Define spaces
-        # obs = market window + portfolio vector
+        # obs = single-timestep market features + portfolio vector.
+        #
+        # This env is used to train a recurrent (LSTM) policy, which is
+        # expected to carry temporal context in its own hidden state
+        # across the episode rather than being handed a manually
+        # flattened lookback window each step (the previous MLP-era
+        # approach: `window_len * n_features` flattened into one
+        # vector). Feeding a flattened window into an LSTM would waste
+        # the point of the recurrence. `window_len` is still used below
+        # (see reset()) purely to pick a random episode start far enough
+        # into the data for all rolling-window *features* (ATR,
+        # z-scores, etc., computed upstream in the feature pipeline) to
+        # already be warmed up -- it no longer shapes the observation
+        # itself.
+        #
         # portfolio vector: [cash_weight, *asset_weights, unrealized_pnl_pct, holding_time_norm]
         # = 1 (cash) + n_assets (weights) + 1 (unrealized pnl) + 1 (holding time)
         portfolio_vec_dim = 3 + self.n_assets
-        obs_dim = self.window_len * self.n_features + portfolio_vec_dim
+        obs_dim = self.n_features + portfolio_vec_dim
         self.observation_space = spaces.Box(
             low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32
         )
         # Target allocation per asset, in [0, 1]. Implied cash weight is
         # 1 - sum(action). The agent's raw output is clipped (not rescaled)
         # so it can legitimately request "all cash" by outputting zeros.
+        # Long-only: net weight per asset stays in [0, 1] (no short leg).
         self.action_space = spaces.Box(
             low=-1.0, high=1.0, shape=(self.n_assets,), dtype=np.float32
         )
@@ -74,7 +89,15 @@ class GymBitcoinEnv(gym.Env):
         self.current_weights = [0.0] * self.n_assets
         self.holding_time = 0
         self.peak_value = 0.0
-        self.reward_calc = RewardCalculator()
+        reward_cfg = config.get("reward", {})
+        self.reward_calc = RewardCalculator(
+            window=reward_cfg.get("sharpe_window", 100),
+            step_return_weight=reward_cfg.get("step_return_weight", 1.0),
+            sharpe_weight=reward_cfg.get("sharpe_weight", 0.10),
+            drawdown_scale=reward_cfg.get("drawdown_penalty_scale", 0.1),
+            overtrade_scale=reward_cfg.get("overtrade_penalty_scale", 0.01),
+            sharpe_aggregation_steps=reward_cfg.get("sharpe_aggregation_steps", 1),
+        )
         #  Trade State
         self.position_open = False
         self.entry_price = 0.0
@@ -84,8 +107,8 @@ class GymBitcoinEnv(gym.Env):
         self.target_atr_pct=config.get("risk", {}).get("target_atr_pct", 1.0)
 
         logger.info(
-            f"GymBitcoinEnv initialized: "
-            f"data={self.data_path}, window={self.window_len}, "
+            f"GymBitcoinEnv initialized (single-timestep / recurrent-policy obs): "
+            f"data={self.data_path}, episode_start_warmup={self.window_len}, "
             f"features={self.n_features}, obs_dim={obs_dim}, "
             f"max_steps={self.max_steps}, assets={self.portfolio.symbols}"
         )
@@ -123,8 +146,11 @@ class GymBitcoinEnv(gym.Env):
             )
 
     def get_obs(self) -> np.ndarray:
-        start = self.current_step - self.window_len
-        market_window = self.features[start:self.current_step].flatten()
+        # Single timestep of market features. Temporal context is the
+        # recurrent policy's job (via its hidden state across steps),
+        # not this method's -- see the observation_space comment in
+        # __init__ for why this changed from a flattened window.
+        market_step = self.features[self.current_step]
 
         prices = [self.prices[self.current_step]]
         weights = self.portfolio.current_weights(prices)
@@ -142,7 +168,7 @@ class GymBitcoinEnv(gym.Env):
             [portfolio_vec, np.array([self.holding_time / 100.0], dtype=np.float32)]
         )
 
-        return np.concatenate([market_window, portfolio_vec])
+        return np.concatenate([market_step, portfolio_vec])
 
     def reset(self, *, seed: int | None = None, options: dict | None = None):
         super().reset(seed=seed)

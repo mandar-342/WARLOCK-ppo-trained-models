@@ -1,5 +1,5 @@
 from .gym_bitcoin import GymBitcoinEnv
-from .utils import PositionSizer, CostModel, FundingModel
+from .utils import PositionSizer, CostModel, FundingModel, wrap_vec_normalize
 from .rewards import RewardCalculator
 
 
@@ -8,6 +8,7 @@ __all__ = [
     "PositionSizer",
     "CostModel",
     "FundingModel",
+    "wrap_vec_normalize",
     "RewardCalculator",
 ]
 
