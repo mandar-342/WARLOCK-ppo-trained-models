@@ -340,8 +340,9 @@ class Evaluator:
             prices=prices,
             weights=weights,
             init_cash=float(config["portfolio"]["initial_capital"]),
-            fees=float(config["portfolio"]["fees"]["taker_fee_rate"]),
-            slippage=float(config["portfolio"]["slippage"].get("fixed_bps", 0.0)) / 10_000.0,
+            # Added ["long"] to the paths below
+            fees=float(config["portfolio"]["long"]["fees"]["taker_fee_rate"]),
+            slippage=float(config["portfolio"]["long"]["slippage"].get("fixed_bps", 0.0)) / 10_000.0,
             risk_free_rate=self._evaluation_cfg["risk_free_rate"],
             freq=str(config["data"]["timeframe"]),
         )
@@ -395,7 +396,7 @@ class Evaluator:
         logger.success(
             "Analytics generated successfully."
         )
-        return metrics
+        return calculator.to_dict()
 
     def evaluate(self) -> None:
         """
