@@ -460,10 +460,6 @@ python -m src.tests.test_env
 ---
 
 
-<br>
-
----
-
 ## License
 
 Distributed under the **MIT License**.
