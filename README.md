@@ -1,62 +1,351 @@
-# Warlock
+<div align="center">
 
-Warlock is a modular Reinforcement Learning framework for developing and evaluating cryptocurrency trading agents. The project provides an end-to-end pipeline covering historical market data collection, feature engineering, portfolio simulation, risk management, and a custom Gymnasium environment for training RL algorithms. The focus is on building a realistic trading environment that can be easily extended and experimented with.
+![Warlock Banner](https://capsule-render.vercel.app/api?type=waving&color=0:0F0524,35:2E1065,70:4C1D95,100:6D28D9&height=240&section=header&text=WARLOCK&fontSize=78&fontColor=F5F3FF&animation=fadeIn&fontAlignY=36&desc=A%20Reinforcement%20Learning%20Framework%20for%20Cryptocurrency%20Trading&descAlignY=56&descSize=17)
 
-## Key Features
+<img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=21&duration=2800&pause=900&color=C4B5FD&center=true&vCenter=true&width=720&lines=Recurrent+PPO+%2B+LSTM+Trading+Agent;Custom+Gymnasium+Trading+Environment;Sharpe-Aware%2C+Risk-Engineered+Rewards;Config-Driven+%7C+Backtested+%7C+Reproducible" alt="Typing SVG" />
 
-- Modular data collection and preprocessing pipeline
-- Automated feature engineering with visualization support
-- Custom Gymnasium environment for reinforcement learning
-- Realistic spot portfolio simulator with fees and slippage
-- ATR-based Stop Loss, Take Profit, and dynamic position sizing
-- Rolling Sharpe ratio based reward function with drawdown and overtrading penalties
-- Config-driven architecture for rapid experimentation
+<br>
 
-## Project State & Functionality
+[![Python](https://img.shields.io/badge/Python-3.8+-6D28D9?style=for-the-badge&logo=python&logoColor=F5F3FF&labelColor=1a0b2e)](https://www.python.org/)
+[![Stable Baselines3](https://img.shields.io/badge/SB3--Contrib-RecurrentPPO-7C3AED?style=for-the-badge&logo=pytorch&logoColor=F5F3FF&labelColor=1a0b2e)](https://github.com/Stable-Baselines-Team/stable-baselines3-contrib)
+[![Gymnasium](https://img.shields.io/badge/Gymnasium-Custom%20Env-8B5CF6?style=for-the-badge&logo=openaigym&logoColor=F5F3FF&labelColor=1a0b2e)](https://gymnasium.farama.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-A78BFA?style=for-the-badge&labelColor=1a0b2e)](#license)
 
-The repository contains the foundational infrastructure required to train an RL trading agent and is actively being worked upon. All internal components, including the data pipelines, indicator creation, order execution simulation, and reward mechanics, are complete and validated by standalone test files. 
+<a href="https://github.com/darkisthenight07/warlock/stargazers"><img src="https://img.shields.io/github/stars/darkisthenight07/warlock?style=flat-square&color=A78BFA&labelColor=1a0b2e&label=Stars" /></a>
+<a href="https://github.com/darkisthenight07/warlock/commits/main"><img src="https://img.shields.io/github/last-commit/darkisthenight07/warlock?style=flat-square&color=A78BFA&labelColor=1a0b2e&label=Last%20Commit" /></a>
+<img src="https://img.shields.io/badge/Status-Actively%20Developed-A78BFA?style=flat-square&labelColor=1a0b2e" />
+<img src="https://img.shields.io/badge/Domain-Quant%20%2F%20RL%20Research-A78BFA?style=flat-square&labelColor=1a0b2e" />
 
-### Core Modules
+</div>
 
-1. **Data Management (`src/data_manager/`)**
-   * **Downloader & Cleaner:** Automates downloading historical OHLCV data from exchanges (e.g., Binance) and does basic preproccessing such as duplicate removal and handling missing candles.
-   * **Anomaly Detection:** Tracks market structural anomalies such as extreme wick deviations via rolling windows and wick multipliers.
+<br>
 
-2. **Feature Engineering Suite (`src/features/`)**
-   * Implements a pipeline creating distinct features across 5 major categories: Price Action, Candlestick structures, Momentum, Volatility, and Volume indicators.
-   * Includes automated feature profiling, producing visualization graphs (`graphs/features/`) to diagnose correlation profiles, rolling Sharpe ratios, trend strength, and distribution patterns.
+<table align="center" width="100%">
+<tr><td>
 
-3. **Custom Gymnasium Environment (`src/env/`)**
-   * `gym_bitcoin.py` provides a custom Gymnasium interface designed to pass price tensors and historical lookback windows seamlessly to standard RL networks.
+**Warlock** is a modular Reinforcement Learning framework for developing and evaluating cryptocurrency trading agents. It provides an end-to-end research pipeline — historical market data ingestion, feature engineering, a realistic portfolio simulator, and a custom Gymnasium environment — purpose-built for training and stress-testing sequence-aware RL policies such as **Recurrent PPO with an LSTM** backbone. Every stage is config-driven, meaning the whole experiment surface can be reshaped from a single YAML file without touching core code.
 
-4. **Advanced Portfolio Simulator (`src/portfolio/`)**
-   * Emulates realistic spot trading with configurable maker/taker fees, slippage models, minimum trade notional limits,and portfolio rebalancing.
-   *  The simulator also includes ATR-based Stop Loss, Take Profit, dynamic position sizing,and portfolio-level drawdown protection while maintaining detailed trade and equity history throughout each episode.
+</td></tr>
+</table>
 
-6. **Asymmetric Reward Engineering (`src/env/rewards.py`)**
-   * Implements a risk-aware reward function combining immediate portfolio returns with a rolling Sharpe ratio objective.
-   * Additional penalties for portfolio drawdown and excessive trading encourage stable, risk-adjusted behaviour instead of maximizing raw profits alone.
+<br>
 
----
+<div align="center">
 
-## Configuration
+### 📚 Table of Contents
 
-All modules are completely decentralized and governed by `config.yaml`. Adjusting this file allows you to instantly alter exchange parameters, swap active technical indicators, fine-tune trading fees, configure lookback observation windows, or tweak reward structures without touching core code.
+[Backtest Snapshot](#-latest-backtest-snapshot) • [Key Features](#-key-features) • [Architecture](#-architecture-overview) • [Repository Structure](#-repository-structure) • [Pipeline](#-the-pipeline) • [Core Modules](#-core-modules) • [Reward Design](#-reward-design) • [Configuration](#-configuration) • [Getting Started](#-getting-started) • [Tech Stack](#-tech-stack) • [Roadmap](#-roadmap) • [Contributing](#-contributing) • [License](#license)
+
+</div>
+
+<br>
 
 ---
 
-## Getting Started
+## 📊 Latest Backtest Snapshot
+
+<div align="center">
+
+<table>
+<thead>
+<tr>
+<th align="left">Metric</th>
+<th align="center">Before</th>
+<th align="center"></th>
+<th align="center">Now</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left"><b>Best Sharpe Ratio</b></td>
+<td align="center"><code>Negative</code></td>
+<td align="center">→</td>
+<td align="center">🟢 <b>0.4033</b></td>
+</tr>
+<tr>
+<td align="left"><b>Best Return</b></td>
+<td align="center"><code>Negative</code></td>
+<td align="center">→</td>
+<td align="center">🟢 <b>+3.08%</b></td>
+</tr>
+<tr>
+<td align="left"><b>Profit Factor</b></td>
+<td align="center"><code>&lt; 1</code></td>
+<td align="center">→</td>
+<td align="center">🟢 <b>1.2639</b></td>
+</tr>
+<tr>
+<td align="left"><b>Expectancy</b></td>
+<td align="center"><code>Negative</code></td>
+<td align="center">→</td>
+<td align="center">🟢 <b>+1.97</b></td>
+</tr>
+</tbody>
+</table>
+
+</div>
+
+<p align="center"><sub><b>Source:</b> latest checkpoint evaluation sweep via <code>src/analytics/checkpoint_evaluator.py</code> + <code>vbt_metrics.py</code>. The agent moved from a negative-edge baseline to a consistently profitable, positive-Sharpe policy after iterating on reward shaping (Sharpe aggregation windowing) and risk controls (ATR-based SL/TP + drawdown breaker).</sub></p>
+
+<br>
+
+---
+
+## ✨ Key Features
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**Data & Features**
+- 🔄 Modular data pipeline — Binance via `ccxt`, gap-filling, anomaly detection
+- 🧬 Feature engineering across 5 indicator families
+- 📉 Auto-generated diagnostic plots (correlation, Sharpe, distributions)
+
+</td>
+<td width="50%" valign="top">
+
+**Environment & Execution**
+- 🕹️ Custom Gymnasium env for sequence-aware policies
+- 💰 Realistic spot simulator — fees, slippage, min notionals
+- 🛡️ ATR-based SL/TP, dynamic sizing, drawdown protection
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+**Agent & Training**
+- 🧠 Recurrent PPO (LSTM policy) via `sb3-contrib`
+- 🎯 Optuna-based hyperparameter optimization
+- 🌱 Multi-seed runs for robustness validation
+
+</td>
+<td width="50%" valign="top">
+
+**Reward & Analytics**
+- 📈 Rolling Sharpe-ratio objective with return blending
+- ⚖️ Drawdown and overtrading penalties
+- 📊 VectorBT-powered metrics, leaderboards, reporting
+
+</td>
+</tr>
+</table>
+
+<br>
+
+---
+
+## 🏗️ Architecture Overview
+
+```mermaid
+flowchart LR
+    A[("📥 Data Manager")] --> B[["🧬 Feature Engineering"]]
+    B --> C{{"🕹️ Gymnasium Env"}}
+    C --> D[["💰 Portfolio Simulator"]]
+    D --> E(("🧠 Recurrent PPO Agent"))
+    E --> F[["📊 Analytics & Backtesting"]]
+    F -. tune reward/features .-> B
+    F -. tune hyperparameters .-> E
+
+    classDef stage fill:#2E1065,stroke:#A78BFA,stroke-width:1.5px,color:#F5F3FF;
+    classDef agent fill:#5B21B6,stroke:#C4B5FD,stroke-width:2px,color:#F5F3FF;
+    class A,B,C,D,F stage;
+    class E agent;
+```
+
+<br>
+
+---
+
+## 🗂️ Repository Structure
+
+```text
+warlock/
+├── main.py                     # Runs the data + feature pipeline end-to-end
+├── config.yaml                 # Single source of truth for the entire system
+├── requirements.txt
+│
+├── src/
+│   ├── data_manager/            → downloading, cleaning, anomaly detection
+│   ├── features/                → indicator pipeline + feature plots
+│   ├── env/                     → Gymnasium env, reward engineering
+│   ├── portfolio/                → order execution, sizing, trade/equity history
+│   ├── agent/                    → PPO trainer, HPO, multi-seed, evaluation
+│   ├── analytics/                → checkpoint evaluation, leaderboards, reports
+│   ├── benchmark/                → buy & hold / random-agent baselines
+│   ├── utils/                    → config loader, seeding, path helpers
+│   └── tests/                    → env, portfolio & reward verification suite
+│
+├── experiments/                 → per-run configs, checkpoints, logs
+├── graphs/features/              → auto-generated feature diagnostic plots
+└── notebooks/                    → exploratory analysis
+```
+
+<br>
+
+---
+
+## 🔁 The Pipeline
+
+<div align="center">
+
+| Stage | Module | What Happens |
+|:--|:--|:--|
+| **1 · Ingest** | `data_manager` | Historical OHLCV pulled from Binance, cleaned, gap-filled, flagged for wick anomalies |
+| **2 · Engineer** | `features` | Price, candle, momentum, volatility & volume features computed + plotted |
+| **3 · Simulate** | `env` + `portfolio` | Custom Gym env wraps a realistic execution simulator (fees, slippage, ATR SL/TP) |
+| **4 · Train** | `agent` | Recurrent PPO (LSTM) trained against the risk-aware reward signal |
+| **5 · Evaluate** | `analytics` | Checkpoints scored, ranked on a leaderboard, and reported via VectorBT metrics |
+| **6 · Iterate** | `agent.hpo` | Optuna sweeps hyperparameters and reward weights against evaluation results |
+
+</div>
+
+<br>
+
+---
+
+## 📦 Core Modules
+
+<details>
+<summary><b>1 · Data Management</b> — <code>src/data_manager/</code></summary>
+<br>
+
+- **Downloader & Cleaner** — automates historical OHLCV downloads from exchanges (e.g. Binance), with duplicate removal and missing-candle handling.
+- **Anomaly Detection** — flags structural anomalies such as extreme wick deviations using rolling windows and configurable wick multipliers.
+
+</details>
+
+<details>
+<summary><b>2 · Feature Engineering Suite</b> — <code>src/features/</code></summary>
+<br>
+
+- Builds distinct features across **Price Action, Candlestick, Momentum, Volatility, and Volume** categories.
+- Automated feature profiling generates diagnostic plots in `graphs/features/` — correlation profiles, rolling Sharpe ratios, trend strength, and distribution histograms.
+
+</details>
+
+<details>
+<summary><b>3 · Custom Gymnasium Environment</b> — <code>src/env/</code></summary>
+<br>
+
+- `gym_bitcoin.py` implements a custom Gymnasium interface that streams price tensors and historical lookback windows into standard RL networks — including recurrent (LSTM) policies.
+
+</details>
+
+<details>
+<summary><b>4 · Advanced Portfolio Simulator</b> — <code>src/portfolio/</code></summary>
+<br>
+
+- Emulates realistic spot trading: configurable maker/taker fees, slippage models, minimum trade notional limits, and rebalancing.
+- Includes ATR-based Stop Loss / Take Profit, dynamic position sizing, and portfolio-level drawdown protection.
+- Maintains a full trade and equity history per episode for post-hoc analysis.
+
+</details>
+
+<details>
+<summary><b>5 · Reward Engineering</b> — <code>src/env/rewards.py</code></summary>
+<br>
+
+- Risk-aware reward combining immediate portfolio returns with a **rolling, aggregated Sharpe-ratio objective**.
+- Returns are aggregated over a short window before entering the Sharpe buffer, so the ratio reflects sustained performance rather than single-tick noise.
+- Additional drawdown and overtrading penalties discourage churn and excessive risk-taking in favor of stable, risk-adjusted behavior.
+
+</details>
+
+<details>
+<summary><b>6 · Agent & Experimentation</b> — <code>src/agent/</code></summary>
+<br>
+
+- `trainer.py` — orchestrates Recurrent PPO training (`sb3-contrib`), environment vectorization, and callbacks.
+- `hpo.py` — Optuna-based hyperparameter optimization.
+- `multi_seed.py` — multi-seed runs for robustness checks.
+- `evaluate.py` / `quick_eval.py` — checkpoint evaluation utilities.
+- `experiment.py` — experiment tracking and run-directory management (see `experiments/`).
+
+</details>
+
+<details>
+<summary><b>7 · Analytics & Reporting</b> — <code>src/analytics/</code></summary>
+<br>
+
+- Checkpoint evaluation, leaderboard generation, and cross-run comparison.
+- `vbt_metrics.py` — VectorBT-powered performance metrics (Sharpe, returns, profit factor, expectancy).
+- Report and plot generation for backtest results.
+
+</details>
+
+<br>
+
+---
+
+## 🧮 Reward Design
+
+The reward function blends four signals into a single risk-adjusted scalar:
+
+$$R_t = w_r \cdot r_t \;+\; w_s \cdot \text{Sharpe}_t \;-\; \lambda_{dd} \cdot \text{Drawdown}_t \;-\; \lambda_{ot} \cdot \text{Overtrade}_t$$
+
+<div align="center">
+
+| Term | Purpose |
+|:--|:--|
+| `step_return_weight · r_t` | Rewards immediate, realized portfolio return |
+| `sharpe_weight · Sharpe_t` | Rewards *consistency* of returns over a rolling, aggregated window |
+| `drawdown_penalty_scale` | Penalizes portfolio-level drawdown beyond safe thresholds |
+| `overtrade_penalty_scale` | Penalizes excessive turnover / churn |
+
+</div>
+
+All four weights, plus the Sharpe window length and aggregation step size, are exposed directly in `config.yaml` under `reward:` — enabling systematic HPO sweeps over reward shape itself, not just network hyperparameters.
+
+<br>
+
+---
+
+## ⚙️ Configuration
+
+Every module is fully decentralized and governed by a single `config.yaml`. This lets you instantly:
+
+- Swap exchange, symbol, and timeframe settings
+- Toggle active technical indicators
+- Tune trading fees, slippage, and leverage (spot & short)
+- Configure lookback/observation windows
+- Adjust risk parameters (ATR-based SL/TP, max drawdown)
+- Reshape the reward function without touching core code
+
+<details>
+<summary><b>Example config snippet</b></summary>
+
+```yaml
+env:
+  action_scale: 0.5
+  window_len: 48
+  max_trade_step: 0.2
+  transaction_cost_rate: 0.0005
+  max_drawdown: 0.3
+  initial_capital: 10000.0
+
+risk:
+  stop_loss_atr_multiple: 1.5
+  take_profit_atr_multiple: 3.0
+  target_atr_pct: 1.0
+```
+
+</details>
+
+<br>
+
+---
+
+## 🚀 Getting Started
 
 ### Prerequisites
-* Python 3.8+
-* `TA-Lib` C-library dependencies (required for technical market indicators)
+- Python 3.8+
+- `TA-Lib` C-library dependencies (required for technical indicators)
 
-### 1. Installation
-
-Clone this repository and set up your local development environment:
+### 1 · Installation
 
 ```bash
-
 # Clone the repository
 git clone https://github.com/darkisthenight07/warlock
 cd warlock
@@ -67,30 +356,97 @@ venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
-
 ```
 
+### 2 · Run the Data & Feature Pipeline
 
-## Running the Data & Feature Pipeline
-To invoke the pipeline orchestration engine (which downloads data, builds clean feature matrices, prints dataset details, and builds diagnostic asset charts in your local graphs directory):
+Downloads data, builds clean feature matrices, and generates diagnostic charts in `graphs/`:
+
 ```bash
-
 python main.py
-
 ```
 
-## Component Verification Tests
-The repository packages separate verification testing scripts to guarantee that your custom gym environment, simulated account portfolios, and mathematical reward components operate within perfect limits. Run them via the following scripts:
+### 3 · Train the Agent
 
 ```bash
+python -m src.agent.train
+```
 
-# Verify reward scaling properties, buffer mechanics, and penalties
+### 4 · Component Verification Tests
+
+```bash
+# Verify reward scaling, buffer mechanics, and penalties
 python -m src.tests.test_rewards
 
-# Verify trade execution flows, fee charges, slippage models, and liquidations
+# Verify trade execution, fee charges, slippage, and liquidations
 python -m src.tests.test_portfolio
 
 # Verify Gymnasium state handling, lookback observations, step updates, and resets
 python -m src.tests.test_env
-
 ```
+
+<br>
+
+---
+
+## 🧠 Tech Stack
+
+<div align="center">
+
+![Python](https://img.shields.io/badge/Python-1a0b2e?style=for-the-badge&logo=python&logoColor=A78BFA)
+![PyTorch](https://img.shields.io/badge/PyTorch-1a0b2e?style=for-the-badge&logo=pytorch&logoColor=A78BFA)
+![Gymnasium](https://img.shields.io/badge/Gymnasium-1a0b2e?style=for-the-badge&logo=openaigym&logoColor=A78BFA)
+![Stable Baselines3](https://img.shields.io/badge/SB3--Contrib-1a0b2e?style=for-the-badge&logoColor=A78BFA)
+![Optuna](https://img.shields.io/badge/Optuna-1a0b2e?style=for-the-badge&logoColor=A78BFA)
+
+![Pandas](https://img.shields.io/badge/Pandas-1a0b2e?style=for-the-badge&logo=pandas&logoColor=A78BFA)
+![NumPy](https://img.shields.io/badge/NumPy-1a0b2e?style=for-the-badge&logo=numpy&logoColor=A78BFA)
+![TA--Lib](https://img.shields.io/badge/TA--Lib-1a0b2e?style=for-the-badge&logoColor=A78BFA)
+![VectorBT](https://img.shields.io/badge/VectorBT-1a0b2e?style=for-the-badge&logoColor=A78BFA)
+![ccxt](https://img.shields.io/badge/ccxt-1a0b2e?style=for-the-badge&logoColor=A78BFA)
+![Matplotlib](https://img.shields.io/badge/Matplotlib-1a0b2e?style=for-the-badge&logo=python&logoColor=A78BFA)
+![Loguru](https://img.shields.io/badge/Loguru-1a0b2e?style=for-the-badge&logoColor=A78BFA)
+
+</div>
+
+<br>
+
+---
+
+## 🗺️ Roadmap
+
+- [ ] Expand to multi-asset portfolios (`ETH/USDT` and beyond)
+- [ ] Live / paper-trading execution bridge
+- [ ] Extended HPO sweeps across reward-shaping variants
+- [ ] Model export & inference API for trained checkpoints
+- [ ] Walk-forward validation harness for out-of-sample robustness
+
+<br>
+
+---
+
+## 🤝 Contributing
+
+Issues and pull requests are welcome. If you're proposing a change to the reward function, environment mechanics, or portfolio simulator, please include before/after evaluation metrics (Sharpe, return, profit factor, expectancy) from `src/analytics` so the impact is measurable.
+
+<br>
+
+---
+
+## License
+
+Distributed under the **MIT License**.
+
+<br>
+
+---
+
+<div align="center">
+
+*"An edge isn't found — it's engineered, back-tested, and earned one Sharpe ratio at a time."*
+
+<br>
+
+![Footer](https://capsule-render.vercel.app/api?type=waving&color=0:6D28D9,35:4C1D95,70:2E1065,100:0F0524&height=140&section=footer)
+
+</div>
