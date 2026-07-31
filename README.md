@@ -459,9 +459,6 @@ python -m src.tests.test_env
 
 ---
 
-## 🤝 Contributing
-
-Issues and pull requests are welcome. If you're proposing a change to the reward function, environment mechanics, or portfolio simulator, please include before/after evaluation metrics (Sharpe, return, profit factor, expectancy) from `src/analytics` so the impact is measurable.
 
 <br>
 
