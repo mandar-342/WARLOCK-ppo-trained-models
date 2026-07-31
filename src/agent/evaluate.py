@@ -8,7 +8,7 @@ from loguru import logger
 from sb3_contrib import RecurrentPPO
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 
-from src.analytics.metrics import MetricsCalculator
+from src.analytics.vbt_metrics import VectorBTMetricsCalculator
 from src.analytics.plots import PlotGenerator
 from src.analytics.report import ReportGenerator
 from src.env.gym_bitcoin import GymBitcoinEnv
@@ -342,13 +342,39 @@ class Evaluator:
 
         logger.info("Generating evaluation analytics.")
 
-        calculator = MetricsCalculator(
-            equity_curve=pd.Series(self._equity_curve),
-            trade_returns=pd.Series(self._trade_returns),
+        logger.info("Generating evaluation analytics via VectorBT.")
+
+        history_df = pd.DataFrame(self._portfolio_history)
+        price_cols = [c for c in history_df.columns if c.startswith("price_")]
+        # VectorBT drives this metrics pass off a single (price, weight)
+        # series. This env can trade several assets at once; we take the
+        # first configured asset as the representative series for the
+        # VectorBT simulation (metrics.json / plots reflect that asset's
+        # P&L path). Per-asset breakdowns still live in portfolio.csv /
+        # trades.csv as before -- this is a known simplification of the
+        # VectorBT swap for the multi-asset case, not a full multi-column
+        # portfolio simulation.
+        primary_col = price_cols[0]
+        primary_index = int(primary_col.split("_", 1)[1] == primary_col.split("_", 1)[1]) and 0
+        prices = history_df[primary_col]
+        weights = history_df["weights"].apply(lambda w: w[0])
+
+        calculator = VectorBTMetricsCalculator(
+            prices=prices,
+            weights=weights,
+            init_cash=float(config["portfolio"]["initial_capital"]),
+            fees=float(config["portfolio"]["fees"]["taker_fee_rate"]),
+            slippage=float(config["portfolio"]["slippage"].get("fixed_bps", 0.0)) / 10_000.0,
             risk_free_rate=self._evaluation_cfg["risk_free_rate"],
+            freq=str(config["data"]["timeframe"]),
         )
 
-        metrics = calculator.to_dict()
+        # VectorBT is now the source of truth for the equity curve and
+        # realized trade P&L (previously hand-tracked via `info["capital"]`
+        # deltas); downstream plots/report consume whatever is in these
+        # two lists, so point them at the simulated portfolio.
+        self._equity_curve = calculator.equity_curve().tolist()
+        self._trade_returns = calculator.trade_returns().tolist()
 
         calculator.save_json(
             self._evaluation_dir / "metrics.json",
