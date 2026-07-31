@@ -46,37 +46,41 @@
 
 <div align="center">
 
+<sub>Best-performing checkpoint identified from a 13-checkpoint evaluation sweep (25k–300k training steps)</sub>
+
+<br><br>
+
 <table>
 <thead>
 <tr>
 <th align="left">Metric</th>
-<th align="center">Before</th>
+<th align="center">Weakest Checkpoint</th>
 <th align="center"></th>
-<th align="center">Now</th>
+<th align="center">Best Checkpoint <code>(50k steps)</code></th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td align="left"><b>Best Sharpe Ratio</b></td>
-<td align="center"><code>Negative</code></td>
+<td align="left"><b>Sharpe Ratio</b></td>
+<td align="center"><code>-8.18</code></td>
 <td align="center">→</td>
 <td align="center">🟢 <b>0.4033</b></td>
 </tr>
 <tr>
-<td align="left"><b>Best Return</b></td>
-<td align="center"><code>Negative</code></td>
+<td align="left"><b>Total Return</b></td>
+<td align="center"><code>-29.81%</code></td>
 <td align="center">→</td>
 <td align="center">🟢 <b>+3.08%</b></td>
 </tr>
 <tr>
 <td align="left"><b>Profit Factor</b></td>
-<td align="center"><code>&lt; 1</code></td>
+<td align="center"><code>0.517</code></td>
 <td align="center">→</td>
 <td align="center">🟢 <b>1.2639</b></td>
 </tr>
 <tr>
 <td align="left"><b>Expectancy</b></td>
-<td align="center"><code>Negative</code></td>
+<td align="center"><code>-4.93</code></td>
 <td align="center">→</td>
 <td align="center">🟢 <b>+1.97</b></td>
 </tr>
@@ -85,7 +89,40 @@
 
 </div>
 
-<p align="center"><sub><b>Source:</b> latest checkpoint evaluation sweep via <code>src/analytics/checkpoint_evaluator.py</code> + <code>vbt_metrics.py</code>. The agent moved from a negative-edge baseline to a consistently profitable, positive-Sharpe policy after iterating on reward shaping (Sharpe aggregation windowing) and risk controls (ATR-based SL/TP + drawdown breaker).</sub></p>
+<br>
+
+<div align="center">
+
+#### Full Metric Breakdown — Best Checkpoint (50,000 steps)
+
+<table>
+<thead>
+<tr><th align="left">Category</th><th align="left">Metric</th><th align="center">Value</th></tr>
+</thead>
+<tbody>
+<tr><td rowspan="4" align="left"><b>Returns</b></td><td>Total Return</td><td align="center">🟢 +3.08%</td></tr>
+<tr><td>Annualized Return / CAGR</td><td align="center">🟢 +4.42%</td></tr>
+<tr><td>Annualized Volatility</td><td align="center">12.74%</td></tr>
+<tr><td>Final Capital</td><td align="center">$10,307.61</td></tr>
+<tr><td rowspan="4" align="left"><b>Risk-Adjusted</b></td><td>Sharpe Ratio</td><td align="center">🟢 0.4033</td></tr>
+<tr><td>Sortino Ratio</td><td align="center">0.0061</td></tr>
+<tr><td>Calmar Ratio</td><td align="center">🟢 0.5504</td></tr>
+<tr><td>Peak Capital</td><td align="center">$10,625.75</td></tr>
+<tr><td rowspan="4" align="left"><b>Drawdown</b></td><td>Max Drawdown</td><td align="center">🟢 8.03%</td></tr>
+<tr><td>Average Drawdown</td><td align="center">2.54%</td></tr>
+<tr><td>Longest Drawdown (steps)</td><td align="center">3,205</td></tr>
+<tr><td>Minimum Capital</td><td align="center">$9,316.84</td></tr>
+<tr><td rowspan="5" align="left"><b>Trade Quality</b></td><td>Total Trades</td><td align="center">1,264</td></tr>
+<tr><td>Closing Trades</td><td align="center">533</td></tr>
+<tr><td>Win Rate</td><td align="center">46.72%</td></tr>
+<tr><td>Profit Factor</td><td align="center">🟢 1.2639</td></tr>
+<tr><td>Expectancy</td><td align="center">🟢 +1.97</td></tr>
+</tbody>
+</table>
+
+</div>
+
+<p align="center"><sub><b>Source:</b> checkpoint evaluation sweep via <code>src/analytics/checkpoint_evaluator.py</code> + <code>vbt_metrics.py</code>. Metrics shown are from the top-performing checkpoint, selected via <code>src/analytics</code> leaderboard ranking on risk-adjusted return.</sub></p>
 
 <br>
 
