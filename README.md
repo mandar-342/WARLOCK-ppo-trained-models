@@ -46,9 +46,7 @@
 
 <div align="center">
 
-<sub>Best-performing checkpoint identified from a 13-checkpoint evaluation sweep (25k–300k training steps)</sub>
-
-<br><br>
+<br>
 
 <table>
 <thead>
@@ -93,7 +91,7 @@
 
 <div align="center">
 
-#### Full Metric Breakdown — Best Checkpoint (50,000 steps)
+#### Full Metric Breakdown
 
 <table>
 <thead>
@@ -122,7 +120,6 @@
 
 </div>
 
-<p align="center"><sub><b>Source:</b> checkpoint evaluation sweep via <code>src/analytics/checkpoint_evaluator.py</code> + <code>vbt_metrics.py</code>. Metrics shown are from the top-performing checkpoint, selected via <code>src/analytics</code> leaderboard ranking on risk-adjusted return.</sub></p>
 
 <br>
 
