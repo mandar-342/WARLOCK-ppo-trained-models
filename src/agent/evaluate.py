@@ -7,7 +7,7 @@ import pandas as pd
 from loguru import logger
 from sb3_contrib import RecurrentPPO
 
-from src.analytics.metrics import MetricsCalculator
+from src.analytics.vbt_metrics import VectorBTMetricsCalculator
 from src.analytics.plots import PlotGenerator
 from src.analytics.report import ReportGenerator
 from src.env.gym_bitcoin import GymBitcoinEnv
@@ -287,11 +287,31 @@ class Evaluator:
 
         logger.info("Generating evaluation analytics.")
 
-        metrics = MetricsCalculator(
-            equity_curve=pd.Series(self._equity_curve),
-            trade_returns=pd.Series(self._trade_returns),
+        logger.info("Generating evaluation analytics via VectorBT.")
+
+        history_df = pd.DataFrame(self._portfolio_history)
+        prices = history_df["price"]
+        # VectorBT's `targetpercent` sizing expects the net weight held
+        # in the asset (0 = flat, 1 = fully long); this env already
+        # produces exactly that as weights[0] each step.
+        weights = history_df["weights"].apply(lambda w: w[0])
+
+        metrics = VectorBTMetricsCalculator(
+            prices=prices,
+            weights=weights,
+            init_cash=float(config["portfolio"]["initial_capital"]),
+            fees=float(config["portfolio"]["fees"]["taker_fee_rate"]),
+            slippage=float(config["portfolio"]["slippage"].get("fixed_bps", 0.0)) / 10_000.0,
             risk_free_rate=self._evaluation_cfg["risk_free_rate"],
+            freq=str(config["data"]["timeframe"]),
         )
+
+        # VectorBT is now the source of truth for the equity curve and
+        # realized trade P&L (previously hand-tracked via `info["capital"]`
+        # deltas); downstream plots/report consume whatever is in these
+        # two lists, so point them at the simulated portfolio.
+        self._equity_curve = metrics.equity_curve().tolist()
+        self._trade_returns = metrics.trade_returns().tolist()
 
         metrics.save_json(
             self._evaluation_dir / "metrics.json",
