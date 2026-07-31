@@ -20,3 +20,4 @@ reportlab>=4.1
 
 optuna>=3.6
 tensorboard
+vectorbt>=0.26.0
